@@ -3,11 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CaixaFlex v4 — Fábrica de Borracha</title>
+<title>CaixaOmega — Sistema Financeiro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+if(typeof pdfjsLib!=='undefined')pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -25,13 +29,19 @@
   --radius:12px;--radius-sm:8px;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
+/* SCROLLBAR */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:#2e3448;border-radius:10px;}
+::-webkit-scrollbar-thumb:hover{background:#3a4060;}
+*{scrollbar-width:thin;scrollbar-color:#2e3448 var(--bg);}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh;}
 .shell{display:grid;grid-template-columns:240px 1fr;grid-template-rows:56px 1fr;min-height:100vh;}
 
 /* LOGIN */
 #login-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;}
 .login-box{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:40px;width:360px;text-align:center;}
-.login-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:28px;color:var(--green);letter-spacing:-1px;margin-bottom:4px;}
+.login-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:28px;color:#4db8ff;letter-spacing:-1px;margin-bottom:4px;}
 .login-sub{font-size:12px;color:var(--muted);margin-bottom:32px;}
 .login-label{display:block;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;}
 .login-input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);padding:12px 14px;font-size:15px;font-family:'DM Mono',monospace;outline:none;letter-spacing:2px;text-align:center;margin-bottom:16px;}
@@ -41,8 +51,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 
 /* TOPBAR */
 .topbar{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:100;}
-.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:var(--green);letter-spacing:-0.5px;display:flex;align-items:center;gap:8px;}
-.logo-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 2s infinite;}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#4db8ff;letter-spacing:-0.5px;display:flex;align-items:center;gap:8px;}
+.logo-dot{width:8px;height:8px;background:#4db8ff;border-radius:50%;animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
 .topbar-sub{font-size:12px;color:var(--muted);border-left:1px solid var(--border);padding-left:16px;}
 .topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
@@ -268,7 +278,7 @@ tr:hover td{background:var(--surface2);}
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">CaixaFlex</div>
+    <div class="login-logo">CaixaOmega</div>
     <div class="login-sub">Sistema Financeiro · Fábrica de Borracha</div>
     <label class="login-label">Senha de acesso</label>
     <input type="password" class="login-input" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()">
@@ -281,7 +291,7 @@ tr:hover td{background:var(--surface2);}
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <div class="logo"><div class="logo-dot"></div>CaixaFlex</div>
+  <div class="logo"><div class="logo-dot"></div>CaixaOmega</div>
   <div class="topbar-sub">Fábrica de Peças Automotivas de Borracha</div>
   <div class="topbar-right">
     <div class="ver-badge">v4</div>
@@ -321,6 +331,7 @@ tr:hover td{background:var(--surface2);}
   <div class="nav-item" id="n-proj" onclick="go('projecao',this)"><span class="nav-icon">⟶</span> Projeção</div>
   <div class="nav-item" id="n-ext" onclick="go('extrato',this)"><span class="nav-icon">≡</span> Extrato</div>
   <div class="nav-item" id="n-pdf" onclick="go('importarpdf',this)"><span class="nav-icon">⬆</span> Importar PDF</div>
+  <div class="nav-item" id="n-cats" onclick="go('categorias',this)"><span class="nav-icon">⊞</span> Categorias</div>
 
   <div class="nav-divider"></div>
   <div class="nav-section">DRE</div>
@@ -484,6 +495,20 @@ tr:hover td{background:var(--surface2);}
     <div class="kpi-card amber"><div class="kpi-label">Vence hoje / atrasado</div><div class="kpi-value amber" id="cp-venc">R$ 0</div></div>
     <div class="kpi-card green"><div class="kpi-label">Pago no mês</div><div class="kpi-value green" id="cp-pago">R$ 0</div></div>
   </div>
+
+  <!-- LEITOR NF/FOTO -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-header"><div class="card-title">📷 Ler NF ou boleto (PDF ou foto)</div></div>
+    <div class="card-body">
+      <div class="pdf-drop" id="nfPayDrop" onclick="document.getElementById('nfPayInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleNFDrop(event,'pagar')">
+        <input type="file" id="nfPayInput" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="handleNFFile(this.files[0],'pagar')">
+        <div class="pdf-drop-icon">📄</div>
+        <div class="pdf-drop-text">Arraste a NF, boleto ou foto aqui<br><small>PDF, JPG, PNG — o sistema lê e preenche os campos automaticamente</small></div>
+      </div>
+      <div id="nfPayStatus"></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header"><div class="card-title">Nova conta a pagar</div></div>
     <div class="card-body">
@@ -518,6 +543,20 @@ tr:hover td{background:var(--surface2);}
     <div class="kpi-card amber"><div class="kpi-label">Vence hoje / atrasado</div><div class="kpi-value amber" id="cr-venc">R$ 0</div></div>
     <div class="kpi-card blue"><div class="kpi-label">Recebido no mês</div><div class="kpi-value blue" id="cr-pago">R$ 0</div></div>
   </div>
+
+  <!-- LEITOR NF/FOTO -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-header"><div class="card-title">📷 Ler NF ou comprovante (PDF ou foto)</div></div>
+    <div class="card-body">
+      <div class="pdf-drop" id="nfRecDrop" onclick="document.getElementById('nfRecInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleNFDrop(event,'receber')">
+        <input type="file" id="nfRecInput" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="handleNFFile(this.files[0],'receber')">
+        <div class="pdf-drop-icon">📄</div>
+        <div class="pdf-drop-text">Arraste a NF, comprovante ou foto aqui<br><small>PDF, JPG, PNG — o sistema lê e preenche os campos automaticamente</small></div>
+      </div>
+      <div id="nfRecStatus"></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header"><div class="card-title">Nova conta a receber</div></div>
     <div class="card-body">
@@ -647,9 +686,9 @@ tr:hover td{background:var(--surface2);}
 <div class="view" id="view-importarpdf">
   <div class="page-header"><div><div class="page-title">Importar Extrato PDF</div><div class="page-sub">Jogue o PDF do banco — o sistema identifica entradas e saídas automaticamente</div></div></div>
   <div class="pdf-drop" id="pdfDrop" onclick="document.getElementById('pdfInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handlePdfDrop(event)">
-    <input type="file" id="pdfInput" accept=".pdf,.txt,.csv" style="display:none" onchange="handlePdfFile(this.files[0])">
+    <input type="file" id="pdfInput" accept=".pdf" style="display:none" onchange="handlePdfFile(this.files[0])">
     <div class="pdf-drop-icon">📄</div>
-    <div class="pdf-drop-text">Arraste o PDF do extrato bancário aqui<br><small>ou clique para selecionar · Suporta PDF, TXT e CSV</small></div>
+    <div class="pdf-drop-text">Arraste o PDF do extrato bancário aqui<br><small>ou clique para selecionar · Suporta PDF de qualquer banco</small></div>
   </div>
   <div id="pdfResult"></div>
   <div id="pdfPreview"></div>
@@ -658,47 +697,84 @@ tr:hover td{background:var(--surface2);}
 <!-- ══ DRE ══ -->
 <div class="view" id="view-dre">
   <div class="page-header">
-    <div><div class="page-title">DRE mensal</div><div class="page-sub">Preencha os valores do mês — competência</div></div>
+    <div><div class="page-title">DRE mensal</div><div class="page-sub">Gerado automaticamente dos lançamentos</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <select class="form-input" id="dreAno" style="width:100px;" onchange="renderDRE()"></select>
       <select class="form-input" id="dreMes" style="width:130px;" onchange="renderDRE()"></select>
       <button class="btn btn-outline btn-sm" onclick="exportarDREPDF()">↓ PDF</button>
     </div>
   </div>
-  <div class="kpi-grid-5" style="margin-bottom:16px;">
-    <div class="kpi-card blue"><div class="kpi-label">Receita bruta</div><div class="kpi-value" id="dk-rec">R$ 0</div></div>
-    <div class="kpi-card red"><div class="kpi-label">CMV</div><div class="kpi-value" id="dk-cmv">R$ 0</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Margem bruta</div><div class="kpi-value green" id="dk-mb">R$ 0</div><div class="kpi-pct" id="dk-mb-pct" style="color:var(--green)">0%</div><div class="margem-bar-wrap"><div class="margem-bar" id="dk-mb-bar" style="width:0%;background:var(--green)"></div></div></div>
-    <div class="kpi-card amber"><div class="kpi-label">EBITDA</div><div class="kpi-value" id="dk-ebitda">R$ 0</div><div class="kpi-pct" id="dk-ebitda-pct">0%</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Lucro líquido</div><div class="kpi-value" id="dk-lucro">R$ 0</div><div class="kpi-pct" id="dk-lucro-pct">0%</div></div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid-5" style="margin-bottom:20px;">
+    <div class="kpi-card blue"><div class="kpi-label">Receita bruta</div><div class="kpi-value" id="dk-rec">R$ 0</div><div class="kpi-sub" id="dk-rec-qtd">0 lançamentos</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Total despesas</div><div class="kpi-value" id="dk-cmv">R$ 0</div><div class="kpi-sub" id="dk-cmv-qtd">0 lançamentos</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Resultado líquido</div><div class="kpi-value green" id="dk-mb">R$ 0</div><div class="kpi-pct" id="dk-mb-pct" style="color:var(--green)">0%</div><div class="margem-bar-wrap"><div class="margem-bar" id="dk-mb-bar" style="width:0%;background:var(--green)"></div></div></div>
+    <div class="kpi-card amber"><div class="kpi-label">Maior receita</div><div class="kpi-value amber" id="dk-maior-rec">—</div><div class="kpi-sub" id="dk-maior-rec-val"></div></div>
+    <div class="kpi-card red"><div class="kpi-label">Maior despesa</div><div class="kpi-value red" id="dk-maior-desp">—</div><div class="kpi-sub" id="dk-maior-desp-val"></div></div>
   </div>
-  <div class="alert-banner warn" id="dreAlert" style="margin-bottom:16px;background:var(--amber-dim);border-color:rgba(255,179,64,0.3);">
+
+  <!-- ALERTA -->
+  <div class="alert-banner" id="dreAlert" style="margin-bottom:16px;background:var(--amber-dim);border-color:rgba(255,179,64,0.3);display:none;">
     <div style="font-size:18px">⚠</div><div><div class="alert-title" id="dreAlertTitle" style="color:var(--amber)"></div><div class="alert-body" id="dreAlertBody"></div></div>
   </div>
-  <div class="dre-waterfall" id="dreWaterfall"></div>
-  <button class="btn btn-outline" onclick="addDRELinha()" style="margin-bottom:18px;">+ Adicionar linha personalizada</button>
+
+  <!-- GRÁFICO -->
+  <div class="charts-row" style="margin-bottom:20px;">
+    <div class="chart-card"><div class="chart-title">Receitas por categoria</div><div class="chart-sub">distribuição do mês</div><div class="chart-wrap"><canvas id="cDreRec"></canvas></div></div>
+    <div class="chart-card"><div class="chart-title">Despesas por categoria</div><div class="chart-sub">distribuição do mês</div><div class="chart-wrap"><canvas id="cDreDesp"></canvas></div></div>
+  </div>
+
+  <!-- TABELA DRE -->
+  <div id="dreWaterfall"></div>
 </div>
 
 <!-- ══ EVOLUÇÃO ══ -->
 <div class="view" id="view-evolucao">
-  <div class="page-header"><div><div class="page-title">Evolução DRE</div><div class="page-sub">Comparativo mensal</div></div></div>
-  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Receita × Margem Bruta × Lucro</div><div class="chart-sub">evolução em R$</div><div class="chart-wrap-lg"><canvas id="cEvo"></canvas></div></div>
-  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Margens (%)</div><div class="chart-sub">MB% e EBITDA%</div><div class="chart-wrap"><canvas id="cMarg"></canvas></div></div>
+  <div class="page-header"><div><div class="page-title">Evolução DRE</div><div class="page-sub">Comparativo mensal — gerado dos lançamentos</div></div></div>
+  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Receita × Despesas × Resultado</div><div class="chart-sub">evolução em R$</div><div class="chart-wrap-lg"><canvas id="cEvo"></canvas></div></div>
+  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Margem líquida (%)</div><div class="chart-sub">resultado / receita por mês</div><div class="chart-wrap"><canvas id="cMarg"></canvas></div></div>
   <div class="card"><div class="card-header"><div class="card-title">Histórico mensal</div></div>
-  <table><thead><tr><th>Mês</th><th>Receita</th><th>CMV</th><th>Margem bruta</th><th>MB%</th><th>EBITDA</th><th>EBITDA%</th><th>Lucro líq.</th><th>LL%</th></tr></thead><tbody id="evoBody"></tbody></table></div>
+  <table><thead><tr><th>Mês</th><th>Receita</th><th>Despesas</th><th>Resultado</th><th>Margem %</th><th>Lançamentos</th></tr></thead><tbody id="evoBody"></tbody></table></div>
 </div>
 
 <!-- ══ PRODUTOS ══ -->
 <div class="view" id="view-produtos">
-  <div class="page-header"><div><div class="page-title">Margem por produto</div><div class="page-sub">Qual produto lucra e qual drena</div></div></div>
-  <div class="kpi-grid">
-    <div class="kpi-card green"><div class="kpi-label">Motor mounts</div><div class="kpi-value" id="pm-motor">R$ 0</div><div class="kpi-pct" id="pp-motor">0%</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Transmission mounts</div><div class="kpi-value" id="pm-trans">R$ 0</div><div class="kpi-pct" id="pp-trans">0%</div></div>
-    <div class="kpi-card amber"><div class="kpi-label">Buchas e coxins</div><div class="kpi-value" id="pm-bucha">R$ 0</div><div class="kpi-pct" id="pp-bucha">0%</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Outras receitas</div><div class="kpi-value" id="pm-orec">R$ 0</div><div class="kpi-pct" id="pp-orec">0%</div></div>
-  </div>
-  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Receita vs CMV por produto</div><div class="chart-wrap-lg"><canvas id="cProd"></canvas></div></div>
+  <div class="page-header"><div><div class="page-title">Receita por categoria</div><div class="page-sub">Qual categoria mais gera receita</div></div></div>
+  <div id="prodGrid" class="kpi-grid" style="margin-bottom:20px;"></div>
+  <div class="chart-card" style="margin-bottom:16px;"><div class="chart-title">Receita por categoria</div><div class="chart-wrap-lg"><canvas id="cProd"></canvas></div></div>
   <div class="card"><div class="card-header"><div class="card-title">Análise detalhada</div></div><div id="prodTable"></div></div>
+</div>
+
+<!-- ══ CATEGORIAS ══ -->
+<div class="view" id="view-categorias">
+  <div class="page-header"><div><div class="page-title">Categorias</div><div class="page-sub">Personalize as categorias de entradas e saídas</div></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title" style="color:var(--green)">▲ Categorias de Entrada</div></div>
+        <div class="card-body">
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <input type="text" class="form-input" id="newCatE" placeholder="Nova categoria de entrada...">
+            <button class="btn btn-green" onclick="addCat('e')">+ Adicionar</button>
+          </div>
+          <div id="listCatE"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title" style="color:var(--red)">▼ Categorias de Saída</div></div>
+        <div class="card-body">
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <input type="text" class="form-input" id="newCatS" placeholder="Nova categoria de saída...">
+            <button class="btn btn-green" onclick="addCat('s')">+ Adicionar</button>
+          </div>
+          <div id="listCatS"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 </main>
@@ -711,8 +787,8 @@ const SB=createClient('https://awgjlsznyenjgdsfkwhw.supabase.co','eyJhbGciOiJIUz
 
 // ══ CONSTANTES ══
 const MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const CATS_E=['Motor mounts','Transmission mounts','Buchas e coxins','Outras entradas'];
-const CATS_S=['Matéria-prima','Mão de obra direta','Folha administrativa','Aluguel / energia','Manutenção','Frete / logística','Impostos/tributos','Outras saídas'];
+let CATS_E=['Motor mounts','Transmission mounts','Buchas e coxins','Outras entradas'];
+let CATS_S=['Matéria-prima','Mão de obra direta','Folha administrativa','Aluguel / energia','Manutenção','Frete / logística','Impostos/tributos','Outras saídas'];
 const CONTA_LABELS={itau:'Itaú',bradesco:'Bradesco',caixa:'Caixa físico'};
 const CONTA_COLORS={itau:'var(--itau)',bradesco:'var(--bradesco)',caixa:'var(--caixa)'};
 const DRE_FIXO=[
@@ -774,8 +850,8 @@ async function loadAll(){
     SB.from('cf3_config').select('*').eq('chave','contaspagar').single(),
     SB.from('cf3_config').select('*').eq('chave','contasreceber').single(),
     SB.from('cf3_config').select('*').eq('chave','cheques').single(),
-  ]);
-  FC=(r1.data||[]).map(l=>({id:l.id,data:l.data,tipo:l.tipo,conta:l.conta,cat:l.cat,descricao:l.descricao,val:Number(l.val),ref:l.ref||''}));
+    SB.from('cf3_config').select('*').eq('chave','categorias').single(),
+  ]);  FC=(r1.data||[]).map(l=>({id:l.id,data:l.data,tipo:l.tipo,conta:l.conta,cat:l.cat,descricao:l.descricao,val:Number(l.val),ref:l.ref||''}));
   TF=(r2.data||[]).map(t=>({id:t.id,data:t.data,de:t.de,para:t.para,val:Number(t.val),descricao:t.descricao}));
   DRE={};(r3.data||[]).forEach(row=>{
     const parsed=JSON.parse(row.dados);
@@ -787,6 +863,8 @@ async function loadAll(){
   CP=r6.data?JSON.parse(r6.data.dados):[];
   CR=r7.data?JSON.parse(r7.data.dados):[];
   CHEQ=r8.data?JSON.parse(r8.data.dados):[];
+  const r9=await SB.from('cf3_config').select('*').eq('chave','categorias').single();
+  if(r9.data){const cats=JSON.parse(r9.data.dados);if(cats.e&&cats.e.length)CATS_E=cats.e;if(cats.s&&cats.s.length)CATS_S=cats.s;}
 }
 
 async function saveSI(){
@@ -848,7 +926,7 @@ function go(id,el){
   if(id==='evolucao')renderEvolucao();
   if(id==='produtos')renderProdutos();
   if(id==='transferencia')renderTransfTable();
-  if(id==='dashboard')updateAll();
+  if(id==='categorias')renderCats();
   if(id==='recorrentes')renderRecorrTable();
   if(id==='contaspagar'){renderCPTable();updateCPKPIs();}
   if(id==='contasreceber'){renderCRTable();updateCRKPIs();}
@@ -1120,18 +1198,16 @@ function updateAll(){
 }
 
 function updateDREKPIs(){
-  const key=getDREKey();const d=DRE[key]||{};
-  const rec=(d.motor||0)+(d.trans||0)+(d.bucha||0)+(d.orec||0);
-  const cmv=(d.mp||0)+(d.mod||0)+(d.enc||0)+(d.ins||0)+(d.dep||0);
-  const mb=rec-cmv;
-  const desp=(d.fadm||0)+(d.alug||0)+(d.ener||0)+(d.man||0)+(d.fret||0)+(d.odesp||0);
-  const ebitda=mb-desp;const lucro=ebitda-(d.jur||0)-(d.imp||0);const mbPct=rec?mb/rec:0;
-  setEl('d-rec',fmt(rec));setEl('d-cmv',fmt(cmv));
-  setEl('d-mb',fmt(mb),mb>=0?'kpi-value green':'kpi-value red');
-  document.getElementById('d-mb-pct').textContent=fmtPct(mbPct);document.getElementById('d-mb-pct').style.color=mbPct>=0?'var(--green)':'var(--red)';
-  document.getElementById('d-mb-bar').style.width=Math.max(0,Math.min(100,mbPct*100))+'%';document.getElementById('d-mb-bar').style.background=mbPct>=0.3?'var(--green)':mbPct>=0.1?'var(--amber)':'var(--red)';
-  setEl('d-ebitda',fmt(ebitda));document.getElementById('d-ebitda-pct').textContent=fmtPct(rec?ebitda/rec:0);
-  setEl('d-lucro',fmt(lucro),lucro>=0?'kpi-value purple':'kpi-value red');document.getElementById('d-lucro-pct').textContent=fmtPct(rec?lucro/rec:0);
+  const key=getDREKey();
+  const[ano,mes]=key.split('-');
+  const{totalRec,totalDesp,resultado}=calcDRE_Auto(`${ano}-${mes}`);
+  const margem=totalRec?resultado/totalRec:0;
+  setEl('d-rec',fmt(totalRec));setEl('d-cmv',fmt(totalDesp));
+  setEl('d-mb',fmt(resultado),resultado>=0?'kpi-value green':'kpi-value red');
+  const pctEl=document.getElementById('d-mb-pct');if(pctEl){pctEl.textContent=fmtPct(margem);pctEl.style.color=margem>=0?'var(--green)':'var(--red)';}
+  const barEl=document.getElementById('d-mb-bar');if(barEl){barEl.style.width=Math.max(0,Math.min(100,Math.abs(margem)*100))+'%';barEl.style.background=margem>=0.3?'var(--green)':margem>=0.1?'var(--amber)':'var(--red)';}
+  setEl('d-ebitda',fmt(resultado));const pEl=document.getElementById('d-ebitda-pct');if(pEl)pEl.textContent=fmtPct(margem);
+  setEl('d-lucro',fmt(resultado),resultado>=0?'kpi-value purple':'kpi-value red');const lEl=document.getElementById('d-lucro-pct');if(lEl)lEl.textContent=fmtPct(margem);
 }
 
 function updateCharts(saldos,ent,sai){
@@ -1233,136 +1309,388 @@ function renderProjecao(){
 
 // ══ DRE ══
 function getDREKey(){return`${document.getElementById('dreAno').value}-${String(document.getElementById('dreMes').value).padStart(2,'0')}`;}
-async function calcDRE(){
-  const key=getDREKey();const d={};
-  document.querySelectorAll('[data-k]').forEach(inp=>{d[inp.dataset.k]=parseFloat(inp.value)||0;});
-  DRE[key]=d;
-  const extra=DRE_EXTRA[key]||[];
-  await SB.from('cf3_dre').upsert({chave:key,dados:JSON.stringify({fixed:d,extra})},{onConflict:'chave'});
-  updateDREKPIs();
-  const rec=d.motor+d.trans+d.bucha+d.orec;const cmv=d.mp+d.mod+d.enc+d.ins+d.dep;const mb=rec-cmv;const desp=d.fadm+d.alug+d.ener+d.man+d.fret+d.odesp;const ebitda=mb-desp;const lucro=ebitda-d.jur-d.imp;const mbPct=rec?mb/rec:0;
-  const setDV=(id,v,cls)=>{const el=document.getElementById(id);if(el){el.textContent=v;if(cls)el.className='dc val '+cls;}};
-  setDV('t-rec',fmt(rec),'blue');setDV('t-cmv',fmt(cmv),'red');setDV('t-mb',fmt(mb),mb>=0?'green':'red');setDV('t-desp',fmt(desp),'amber');setDV('t-ebitda',fmt(ebitda),ebitda>=0?'amber':'red');setDV('t-lucro',fmt(lucro),lucro>=0?'purple':'red');
-  ['p-cmv-tot','p-mb-tot','p-desp-tot','p-ebitda-tot','p-lucro-tot'].forEach(id=>{});
-  document.getElementById('dk-mb-pct').textContent=fmtPct(mbPct);document.getElementById('dk-mb-pct').style.color=mbPct>=0?'var(--green)':'var(--red)';
-  document.getElementById('dk-mb-bar').style.width=Math.max(0,Math.min(100,mbPct*100))+'%';document.getElementById('dk-mb-bar').style.background=mbPct>=0.3?'var(--green)':mbPct>=0.1?'var(--amber)':'var(--red)';
-  document.getElementById('dk-ebitda-pct').textContent=fmtPct(rec?ebitda/rec:0);document.getElementById('dk-lucro-pct').textContent=fmtPct(rec?lucro/rec:0);
-  const alertEl=document.getElementById('dreAlert');
-  if(rec>0){if(mbPct<0){alertEl.style.display='flex';document.getElementById('dreAlertTitle').textContent='⚠ Margem bruta NEGATIVA';document.getElementById('dreAlertBody').textContent='A cada venda a fábrica perde dinheiro. Revise o CMV imediatamente.';}else if(mbPct<0.15){alertEl.style.display='flex';document.getElementById('dreAlertTitle').textContent='⚠ Margem bruta abaixo de 15%';document.getElementById('dreAlertBody').textContent='Revise preços ou reduza CMV.';}else alertEl.style.display='none';}else alertEl.style.display='none';
-}
 
-function addDRELinha(){
-  const key=getDREKey();
-  const nome=prompt('Nome da nova linha:');if(!nome)return;
-  if(!DRE_EXTRA[key])DRE_EXTRA[key]=[];
-  const id='ex_'+Date.now();
-  DRE_EXTRA[key].push({id,nome,val:0});
-  renderDRE();
+// ══ DRE 100% AUTOMÁTICO ══
+let chDreRec=null,chDreDesp=null;
+
+function calcDRE_Auto(prefix){
+  // Agrupa lançamentos do mês por categoria
+  const lancs=FC.filter(l=>l.data.startsWith(prefix));
+  const recCats={},despCats={};
+  lancs.forEach(l=>{
+    if(l.tipo==='e'){recCats[l.cat]=(recCats[l.cat]||0)+l.val;}
+    else{despCats[l.cat]=(despCats[l.cat]||0)+l.val;}
+  });
+  const totalRec=Object.values(recCats).reduce((a,b)=>a+b,0);
+  const totalDesp=Object.values(despCats).reduce((a,b)=>a+b,0);
+  const resultado=totalRec-totalDesp;
+  return{lancs,recCats,despCats,totalRec,totalDesp,resultado};
 }
-function delDRELinha(key,id){DRE_EXTRA[key]=DRE_EXTRA[key].filter(x=>x.id!==id);renderDRE();}
 
 function renderDRE(){
-  const key=getDREKey();const d=DRE[key]||{};const extra=DRE_EXTRA[key]||[];
-  const wf=document.getElementById('dreWaterfall');
-  let html=`<div class="dre-row hdr no-hover"><div class="dc lbl sec">Linha do DRE</div><div class="dc val" style="font-size:10px;color:var(--muted);text-align:right">VALOR (R$)</div><div class="dc pct" style="font-size:10px;color:var(--muted)">% REC.</div><div></div></div>`;
-  DRE_FIXO.forEach(row=>{
-    if(row.sec){html+=`<div class="dre-row sec no-hover"><div class="dc lbl sec" style="grid-column:1/-1">${row.sec}</div></div>`;return;}
-    if(row.tot){
-      const cls=row.cls||'';const big=row.big?'font-size:15px;':'';
-      const hlMap={green:'hl-green',red:'hl-red',amber:'hl-amber',blue:'hl-blue',purple:'hl-purple'};
-      html+=`<div class="dre-row ${hlMap[cls]||''} no-hover"><div class="dc lbl tot" style="color:var(--${cls});${big}">${row.lbl}</div><div class="dc val ${cls}" id="t-${row.tot}" style="${big}">R$ 0</div><div class="dc pct" id="p-${row.tot}-tot">—</div><div></div></div>`;
-      return;
-    }
-    html+=`<div class="dre-input-row"><div class="dre-lbl">${row.lbl}</div><input class="dre-inline" type="number" placeholder="0" oninput="calcDRE()" data-k="${row.k}" value="${d[row.k]||''}"><div class="dre-pct-cell" id="p-${row.k}">—</div><div></div></div>`;
-  });
-  if(extra.length){
-    html+=`<div class="dre-row sec no-hover"><div class="dc lbl sec" style="grid-column:1/-1">5. LINHAS PERSONALIZADAS</div></div>`;
-    extra.forEach(ex=>{html+=`<div class="dre-input-row"><div class="dre-lbl">${ex.nome}</div><input class="dre-inline" type="number" placeholder="0" oninput="updateExtraLinha('${key}','${ex.id}',this.value)" value="${ex.val||''}"><div class="dre-pct-cell">—</div><div class="dre-del"><button class="btn btn-sm btn-danger" onclick="delDRELinha('${key}','${ex.id}')">✕</button></div></div>`;});
-  }
-  wf.innerHTML=html;
-  calcDRE();
-}
+  const key=getDREKey();
+  const[ano,mes]=key.split('-');
+  const prefix=`${ano}-${mes}`;
+  const{lancs,recCats,despCats,totalRec,totalDesp,resultado}=calcDRE_Auto(prefix);
+  const margem=totalRec?resultado/totalRec:0;
 
-function updateExtraLinha(key,id,val){const ex=DRE_EXTRA[key]&&DRE_EXTRA[key].find(x=>x.id===id);if(ex)ex.val=parseFloat(val)||0;}
+  // KPIs
+  setEl('dk-rec',fmt(totalRec));
+  setEl('dk-cmv',fmt(totalDesp));
+  document.getElementById('dk-rec-qtd').textContent=lancs.filter(l=>l.tipo==='e').length+' lançamentos';
+  document.getElementById('dk-cmv-qtd').textContent=lancs.filter(l=>l.tipo==='s').length+' lançamentos';
+  setEl('dk-mb',fmt(resultado),resultado>=0?'kpi-value green':'kpi-value red');
+  document.getElementById('dk-mb-pct').textContent=fmtPct(margem);
+  document.getElementById('dk-mb-pct').style.color=margem>=0?'var(--green)':'var(--red)';
+  document.getElementById('dk-mb-bar').style.width=Math.max(0,Math.min(100,Math.abs(margem)*100))+'%';
+  document.getElementById('dk-mb-bar').style.background=margem>=0.3?'var(--green)':margem>=0.1?'var(--amber)':'var(--red)';
+
+  // Maior receita e despesa
+  const maiorRec=Object.entries(recCats).sort((a,b)=>b[1]-a[1])[0];
+  const maiorDesp=Object.entries(despCats).sort((a,b)=>b[1]-a[1])[0];
+  setEl('dk-maior-rec',maiorRec?maiorRec[0]:'—');
+  document.getElementById('dk-maior-rec-val').textContent=maiorRec?fmt(maiorRec[1]):'';
+  setEl('dk-maior-desp',maiorDesp?maiorDesp[0]:'—');
+  document.getElementById('dk-maior-desp-val').textContent=maiorDesp?fmt(maiorDesp[1]):'';
+
+  // Alerta
+  const alertEl=document.getElementById('dreAlert');
+  if(totalRec>0&&margem<0){alertEl.style.display='flex';document.getElementById('dreAlertTitle').textContent='⚠ Resultado NEGATIVO — despesas superam receitas';document.getElementById('dreAlertBody').textContent='Revise os lançamentos do mês. As saídas estão maiores que as entradas.';}
+  else if(totalRec>0&&margem<0.1){alertEl.style.display='flex';document.getElementById('dreAlertTitle').textContent='⚠ Margem abaixo de 10% — atenção';document.getElementById('dreAlertBody').textContent='Resultado muito apertado. Verifique as principais despesas do mês.';}
+  else alertEl.style.display='none';
+
+  // Gráficos
+  const cores=['rgba(0,229,160,0.7)','rgba(77,159,255,0.7)','rgba(255,179,64,0.7)','rgba(167,139,250,0.7)','rgba(236,112,0,0.7)','rgba(204,9,47,0.7)','rgba(45,138,78,0.7)','rgba(255,79,107,0.7)'];
+  if(chDreRec)chDreRec.destroy();
+  if(chDreDesp)chDreDesp.destroy();
+  if(Object.keys(recCats).length){
+    chDreRec=new Chart(document.getElementById('cDreRec').getContext('2d'),{type:'doughnut',data:{labels:Object.keys(recCats),datasets:[{data:Object.values(recCats),backgroundColor:cores,borderWidth:0,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right',labels:{color:'#7a7f96',font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${fmtPct(totalRec?c.raw/totalRec:0)})`}}}}});
+  }
+  if(Object.keys(despCats).length){
+    chDreDesp=new Chart(document.getElementById('cDreDesp').getContext('2d'),{type:'doughnut',data:{labels:Object.keys(despCats),datasets:[{data:Object.values(despCats),backgroundColor:cores.slice().reverse(),borderWidth:0,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right',labels:{color:'#7a7f96',font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${fmtPct(totalDesp?c.raw/totalDesp:0)})`}}}}});
+  }
+
+  // Tabela DRE
+  const wf=document.getElementById('dreWaterfall');
+  let html=`<div class="dre-waterfall">`;
+
+  // Header
+  html+=`<div class="dre-row hdr no-hover" style="grid-template-columns:1fr 160px 100px">
+    <div class="dc lbl sec">Linha do DRE</div>
+    <div class="dc val" style="font-size:10px;color:var(--muted);text-align:right">VALOR (R$)</div>
+    <div class="dc pct" style="font-size:10px;color:var(--muted)">% REC.</div>
+  </div>`;
+
+  // RECEITAS
+  html+=`<div class="dre-row sec no-hover" style="grid-template-columns:1fr 160px 100px"><div class="dc lbl sec" style="grid-column:1/-1">▲ RECEITAS</div></div>`;
+  if(Object.keys(recCats).length){
+    Object.entries(recCats).sort((a,b)=>b[1]-a[1]).forEach(([cat,val])=>{
+      html+=`<div class="dre-row" style="grid-template-columns:1fr 160px 100px">
+        <div class="dc lbl ind">${cat}</div>
+        <div class="dc val green">${fmt(val)}</div>
+        <div class="dc pct">${fmtPct(totalRec?val/totalRec:0)}</div>
+      </div>`;
+    });
+  } else {
+    html+=`<div class="dre-row" style="grid-template-columns:1fr 160px 100px"><div class="dc lbl ind" style="color:var(--muted);grid-column:1/-1;font-style:italic">Nenhuma entrada lançada neste mês</div></div>`;
+  }
+  html+=`<div class="dre-row hl-green no-hover" style="grid-template-columns:1fr 160px 100px">
+    <div class="dc lbl tot" style="color:var(--green)">= TOTAL RECEITAS</div>
+    <div class="dc val green" style="font-size:15px">${fmt(totalRec)}</div>
+    <div class="dc pct" style="color:var(--green)">100%</div>
+  </div>`;
+
+  // DESPESAS
+  html+=`<div class="dre-row sec no-hover" style="grid-template-columns:1fr 160px 100px"><div class="dc lbl sec" style="grid-column:1/-1">▼ DESPESAS</div></div>`;
+  if(Object.keys(despCats).length){
+    Object.entries(despCats).sort((a,b)=>b[1]-a[1]).forEach(([cat,val])=>{
+      html+=`<div class="dre-row" style="grid-template-columns:1fr 160px 100px">
+        <div class="dc lbl ind">${cat}</div>
+        <div class="dc val red">${fmt(val)}</div>
+        <div class="dc pct">${fmtPct(totalRec?val/totalRec:0)}</div>
+      </div>`;
+    });
+  } else {
+    html+=`<div class="dre-row" style="grid-template-columns:1fr 160px 100px"><div class="dc lbl ind" style="color:var(--muted);grid-column:1/-1;font-style:italic">Nenhuma saída lançada neste mês</div></div>`;
+  }
+  html+=`<div class="dre-row hl-red no-hover" style="grid-template-columns:1fr 160px 100px">
+    <div class="dc lbl tot" style="color:var(--red)">= TOTAL DESPESAS</div>
+    <div class="dc val red" style="font-size:15px">${fmt(totalDesp)}</div>
+    <div class="dc pct" style="color:var(--red)">${fmtPct(totalRec?totalDesp/totalRec:0)}</div>
+  </div>`;
+
+  // RESULTADO
+  const hlRes=resultado>=0?'hl-green':'hl-red';
+  const corRes=resultado>=0?'var(--green)':'var(--red)';
+  html+=`<div class="dre-row ${hlRes} no-hover" style="grid-template-columns:1fr 160px 100px">
+    <div class="dc lbl tot" style="color:${corRes};font-size:15px">= RESULTADO LÍQUIDO</div>
+    <div class="dc val ${resultado>=0?'green':'red'}" style="font-size:18px;font-weight:700">${fmt(resultado)}</div>
+    <div class="dc pct" style="color:${corRes};font-size:14px">${fmtPct(margem)}</div>
+  </div>`;
+
+  html+=`</div>`;
+
+  // Detalhe por lançamento
+  if(lancs.length){
+    html+=`<div class="card" style="margin-top:18px;">
+      <div class="card-header"><div class="card-title">Lançamentos do mês (${lancs.length})</div></div>
+      <table><thead><tr><th>Data</th><th>Conta</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>
+      ${[...lancs].sort((a,b)=>a.data.localeCompare(b.data)).map(l=>`<tr>
+        <td class="mono" style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
+        <td>${contaPill(l.conta)}</td>
+        <td style="font-size:12px;color:var(--muted)">${l.cat}</td>
+        <td>${l.descricao}</td>
+        <td class="${l.tipo==='e'?'val-pos':'val-neg'}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
+
+  wf.innerHTML=html;
+
+  // Atualiza também os KPIs do dashboard
+  updateDREKPIs();
+}
 
 // ══ EVOLUÇÃO ══
 function renderEvolucao(){
-  const keys=Object.keys(DRE).sort();if(!keys.length)return;
+  // Pega todos os meses que têm lançamentos
+  const mesesComLanc={};
+  FC.forEach(l=>{const k=l.data.slice(0,7);if(!mesesComLanc[k])mesesComLanc[k]={rec:0,desp:0,qtd:0};if(l.tipo==='e')mesesComLanc[k].rec+=l.val;else mesesComLanc[k].desp+=l.val;mesesComLanc[k].qtd++;});
+  const keys=Object.keys(mesesComLanc).sort();
+  if(!keys.length){document.getElementById('evoBody').innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Nenhum lançamento ainda</td></tr>';return;}
   const labels=keys.map(k=>{const[y,m]=k.split('-');return MESES[parseInt(m)-1].slice(0,3)+'/'+y.slice(2);});
-  const recs=[],mbs=[],lucros=[],mbPcts=[],ebitdaPcts=[];
-  keys.forEach(k=>{const d=DRE[k]||{};const rec=(d.motor||0)+(d.trans||0)+(d.bucha||0)+(d.orec||0);const cmv=(d.mp||0)+(d.mod||0)+(d.enc||0)+(d.ins||0)+(d.dep||0);const mb=rec-cmv;const desp=(d.fadm||0)+(d.alug||0)+(d.ener||0)+(d.man||0)+(d.fret||0)+(d.odesp||0);const ebitda=mb-desp;const lucro=ebitda-(d.jur||0)-(d.imp||0);recs.push(rec);mbs.push(mb);lucros.push(lucro);mbPcts.push(rec?parseFloat((mb/rec*100).toFixed(1)):0);ebitdaPcts.push(rec?parseFloat((ebitda/rec*100).toFixed(1)):0);});
+  const recs=keys.map(k=>mesesComLanc[k].rec);
+  const desps=keys.map(k=>mesesComLanc[k].desp);
+  const resultados=keys.map(k=>mesesComLanc[k].rec-mesesComLanc[k].desp);
+  const margens=keys.map(k=>{const r=mesesComLanc[k].rec;return r?parseFloat(((r-mesesComLanc[k].desp)/r*100).toFixed(1)):0;});
   if(chEvo)chEvo.destroy();
-  chEvo=new Chart(document.getElementById('cEvo').getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Receita',data:recs,backgroundColor:'rgba(77,159,255,0.6)',borderRadius:4},{label:'Margem Bruta',data:mbs,backgroundColor:'rgba(0,229,160,0.6)',borderRadius:4},{label:'Lucro Líquido',data:lucros,backgroundColor:'rgba(167,139,250,0.6)',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+  chEvo=new Chart(document.getElementById('cEvo').getContext('2d'),{type:'bar',data:{labels,datasets:[{label:'Receitas',data:recs,backgroundColor:'rgba(77,159,255,0.6)',borderRadius:4},{label:'Despesas',data:desps,backgroundColor:'rgba(255,79,107,0.6)',borderRadius:4},{label:'Resultado',data:resultados,backgroundColor:resultados.map(v=>v>=0?'rgba(0,229,160,0.7)':'rgba(255,79,107,0.4)'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
   if(chMarg)chMarg.destroy();
-  chMarg=new Chart(document.getElementById('cMarg').getContext('2d'),{type:'line',data:{labels,datasets:[{label:'Margem Bruta %',data:mbPcts,borderColor:'#00e5a0',backgroundColor:'rgba(0,229,160,0.1)',borderWidth:2,pointRadius:4,tension:0.3,fill:true},{label:'EBITDA %',data:ebitdaPcts,borderColor:'#ffb340',backgroundColor:'rgba(255,179,64,0.08)',borderWidth:2,pointRadius:4,tension:0.3,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>c.raw+'%'}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}}}}});
-  document.getElementById('evoBody').innerHTML=keys.map((k,i)=>{const dd=DRE[k]||{};const r=recs[i];const c=(dd.mp||0)+(dd.mod||0)+(dd.enc||0)+(dd.ins||0)+(dd.dep||0);const m=mbs[i];const dep2=(dd.fadm||0)+(dd.alug||0)+(dd.ener||0)+(dd.man||0)+(dd.fret||0)+(dd.odesp||0);const eb=m-dep2;const lu=lucros[i];const[y,mo]=k.split('-');return`<tr><td>${MESES[parseInt(mo)-1].slice(0,3)+'/'+y.slice(2)}</td><td class="mono">${fmt(r)}</td><td class="val-neg">${fmt(c)}</td><td class="${m>=0?'val-pos':'val-neg'}">${fmt(m)}</td><td class="mono" style="color:${m>=0?'var(--green)':'var(--red)'}">${fmtPct(r?m/r:0)}</td><td class="${eb>=0?'val-pos':'val-neg'}">${fmt(eb)}</td><td class="mono" style="color:${eb>=0?'var(--amber)':'var(--red)'}">${fmtPct(r?eb/r:0)}</td><td class="${lu>=0?'val-pos':'val-neg'}">${fmt(lu)}</td><td class="mono" style="color:${lu>=0?'var(--purple)':'var(--red)'}">${fmtPct(r?lu/r:0)}</td></tr>`;}).join('');
+  chMarg=new Chart(document.getElementById('cMarg').getContext('2d'),{type:'line',data:{labels,datasets:[{label:'Margem líquida %',data:margens,borderColor:'#00e5a0',backgroundColor:'rgba(0,229,160,0.1)',borderWidth:2,pointRadius:4,tension:0.3,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>c.raw+'%'}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>v+'%'},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+  document.getElementById('evoBody').innerHTML=keys.map((k,i)=>{const r=recs[i];const d=desps[i];const res=resultados[i];const m=margens[i];const[y,mo]=k.split('-');return`<tr><td>${MESES[parseInt(mo)-1].slice(0,3)+'/'+y.slice(2)}</td><td class="val-pos">+${fmt(r)}</td><td class="val-neg">-${fmt(d)}</td><td class="${res>=0?'val-pos':'val-neg'}">${res>=0?'+':''}${fmt(res)}</td><td class="mono" style="color:${m>=0?'var(--green)':'var(--red)'}">${m}%</td><td class="mono" style="color:var(--muted)">${mesesComLanc[k].qtd}</td></tr>`;}).join('');
 }
 
-// ══ PRODUTOS ══
+// ══ RECEITA POR CATEGORIA ══
 function renderProdutos(){
-  const key=getDREKey();const d=DRE[key]||{};
-  const rec=(d.motor||0)+(d.trans||0)+(d.bucha||0)+(d.orec||0);
-  const cmv=(d.mp||0)+(d.mod||0)+(d.enc||0)+(d.ins||0)+(d.dep||0);
-  const prods=[{name:'Motor mounts',val:d.motor||0,id:'motor',color:'rgba(0,229,160,0.7)'},{name:'Transmission mounts',val:d.trans||0,id:'trans',color:'rgba(77,159,255,0.7)'},{name:'Buchas e coxins',val:d.bucha||0,id:'bucha',color:'rgba(255,179,64,0.7)'},{name:'Outras receitas',val:d.orec||0,id:'orec',color:'rgba(167,139,250,0.7)'}];
-  prods.forEach(p=>{const pct=rec?p.val/rec:0;const cmvP=cmv*pct;const mb=p.val-cmvP;const mbPct=p.val?mb/p.val:0;setEl('pm-'+p.id,fmt(mb),mb>=0?'kpi-value green':'kpi-value red');document.getElementById('pp-'+p.id).textContent=fmtPct(mbPct);document.getElementById('pp-'+p.id).style.color=mbPct>=0?'var(--green)':'var(--red)';});
+  const key=getDREKey();
+  const[ano,mes]=key.split('-');
+  const prefix=`${ano}-${mes}`;
+  const{recCats,totalRec,totalDesp,resultado}=calcDRE_Auto(prefix);
+  const cores=['rgba(0,229,160,0.7)','rgba(77,159,255,0.7)','rgba(255,179,64,0.7)','rgba(167,139,250,0.7)','rgba(236,112,0,0.7)','rgba(204,9,47,0.7)'];
+  const cats=Object.entries(recCats).sort((a,b)=>b[1]-a[1]);
+
+  // Grid KPIs
+  const grid=document.getElementById('prodGrid');
+  const clsCores=['green','blue','amber','purple','amber','red'];
+  grid.innerHTML=cats.map(([cat,val],i)=>`
+    <div class="kpi-card ${clsCores[i%6]}">
+      <div class="kpi-label">${cat}</div>
+      <div class="kpi-value">${fmt(val)}</div>
+      <div class="kpi-pct">${fmtPct(totalRec?val/totalRec:0)} da receita</div>
+    </div>`).join('') || '<div style="color:var(--muted);padding:20px">Nenhuma receita lançada neste mês</div>';
+
   if(chProd)chProd.destroy();
-  chProd=new Chart(document.getElementById('cProd').getContext('2d'),{type:'bar',data:{labels:prods.map(p=>p.name),datasets:[{label:'Receita',data:prods.map(p=>p.val),backgroundColor:prods.map(p=>p.color),borderRadius:6,borderSkipped:false},{label:'CMV proporcional',data:prods.map(p=>cmv*(rec?p.val/rec:0)),backgroundColor:'rgba(255,79,107,0.5)',borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+  if(cats.length){
+    chProd=new Chart(document.getElementById('cProd').getContext('2d'),{type:'bar',data:{labels:cats.map(c=>c[0]),datasets:[{label:'Receita',data:cats.map(c=>c[1]),backgroundColor:cores,borderRadius:6,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+  }
+
   const el=document.getElementById('prodTable');
-  if(!rec){el.innerHTML='<div class="empty-state"><div class="empty-icon">◉</div><div class="empty-text">Preencha o DRE para ver análise.</div></div>';return;}
-  el.innerHTML=`<table><thead><tr><th>Produto</th><th>Receita</th><th>% do total</th><th>CMV proporcional</th><th>Margem bruta</th><th>MB%</th><th>Status</th></tr></thead><tbody>${prods.map(p=>{const pct=rec?p.val/rec:0;const cmvP=cmv*pct;const mb=p.val-cmvP;const mbPct=p.val?mb/p.val:0;const st=mbPct>0.35?'🟢 Saudável':mbPct>0.15?'🟡 Atenção':mbPct>0?'🔴 Apertada':'🔴 Negativa';return`<tr><td style="font-weight:500">${p.name}</td><td class="mono">${fmt(p.val)}</td><td class="mono" style="color:var(--muted)">${fmtPct(pct)}</td><td class="val-neg">${fmt(cmvP)}</td><td class="${mb>=0?'val-pos':'val-neg'}">${fmt(mb)}</td><td class="mono" style="color:${mbPct>=0?'var(--green)':'var(--red)'}">${fmtPct(mbPct)}</td><td>${st}</td></tr>`;}).join('')}</tbody></table>`;
+  if(!cats.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◉</div><div class="empty-text">Nenhuma receita lançada neste mês.</div></div>';return;}
+  el.innerHTML=`<table><thead><tr><th>Categoria</th><th>Receita</th><th>% do total</th><th>Status</th></tr></thead><tbody>${cats.map(([cat,val])=>{const pct=totalRec?val/totalRec:0;const st=pct>0.4?'⭐ Principal':pct>0.2?'🟢 Relevante':'🟡 Secundária';return`<tr><td style="font-weight:500">${cat}</td><td class="val-pos">+${fmt(val)}</td><td class="mono" style="color:var(--muted)">${fmtPct(pct)}</td><td>${st}</td></tr>`;}).join('')}</tbody></table>`;
 }
 
 // ══ IMPORTAR PDF ══
 function handlePdfDrop(e){e.preventDefault();document.getElementById('pdfDrop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handlePdfFile(f);}
-function handlePdfFile(file){
+
+async function handlePdfFile(file){
   if(!file)return;
   const result=document.getElementById('pdfResult');
   const preview=document.getElementById('pdfPreview');
-  result.innerHTML=`<div class="pdf-result">📄 Arquivo: <strong>${file.name}</strong> (${(file.size/1024).toFixed(1)} KB)<br>⚙ Analisando o extrato...</div>`;
-  const reader=new FileReader();
-  reader.onload=function(e){
-    const text=e.target.result;
-    const lines=text.split('\n').filter(l=>l.trim());
-    const lancamentos=[];
-    // Padrões comuns de extrato bancário
-    const padroes=[
-      /(\d{2}\/\d{2}\/?\d{0,4})[^\d]+([\w\s\/\-\.]+?)\s+([\+\-]?\s*R?\$?\s*[\d\.]+,\d{2})/gi,
-      /(\d{2}\/\d{2})[^\d]+(.*?)\s+([\d\.]+,\d{2})\s*(C|D|CR|DB)?/gi,
-    ];
-    lines.forEach(line=>{
-      const m1=line.match(/(\d{2}\/\d{2}(?:\/\d{2,4})?)\s+(.+?)\s+([\+\-]?\s*[\d\.]+,\d{2})\s*$/);
-      if(m1){
-        const [,data,desc,valStr]=m1;
-        const val=parseFloat(valStr.replace(/\./g,'').replace(',','.').replace(/\s/g,''));
-        if(!isNaN(val)&&Math.abs(val)>0){
-          const tipo=val>=0?'e':'s';
-          const parts=data.split('/');
-          const hoje=new Date();
-          const mes=parts[1]||String(hoje.getMonth()+1).padStart(2,'0');
-          const ano=parts[2]?parts[2].length===2?'20'+parts[2]:parts[2]:String(hoje.getFullYear());
-          const dataFmt=`${ano}-${mes.padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-          lancamentos.push({data:dataFmt,desc:desc.trim(),val:Math.abs(val),tipo});
-        }
+  result.innerHTML=`<div class="pdf-result">📄 <strong>${file.name}</strong> (${(file.size/1024).toFixed(1)} KB)<br><span style="color:var(--green)">⚙ Lendo o PDF...</span></div>`;
+  preview.innerHTML='';
+
+  try{
+    const arrayBuffer=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    let textoCompleto='';
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const content=await page.getTextContent();
+      // Agrupa itens por linha usando posição Y
+      const linhaMap={};
+      content.items.forEach(item=>{
+        const y=Math.round(item.transform[5]);
+        if(!linhaMap[y])linhaMap[y]=[];
+        linhaMap[y].push({x:item.transform[4],text:item.str});
+      });
+      const linhasOrdenadas=Object.keys(linhaMap).sort((a,b)=>b-a);
+      linhasOrdenadas.forEach(y=>{
+        const itens=linhaMap[y].sort((a,b)=>a.x-b.x);
+        textoCompleto+=itens.map(i=>i.text).join(' ')+'\n';
+      });
+    }
+    parsearExtrato(textoCompleto,result,preview);
+  }catch(err){
+    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro ao ler o PDF: ${err.message}<br>Verifique se o arquivo não está protegido por senha.</div>`;
+  }
+}
+
+function parsearExtrato(texto,result,preview){
+  const linhas=texto.split('\n').map(l=>l.trim()).filter(l=>l.length>2);
+  const lancamentos=[];
+  const hoje=new Date();
+  const anoAtual=String(hoje.getFullYear());
+
+  // Palavras-chave que indicam SAÍDA
+  const kwSaida=['pagamento','pag.','pag ','débito','debito','saque','ted','doc','tarifa','taxa','juros','iof','boleto','compra','picpay','mercado','uber','ifood','amazon','rappi','99','transferência enviada','transf. enviada','transferência para','transf. para','pix enviado','pix para','resgat'];
+  // Palavras-chave que indicam ENTRADA
+  const kwEntrada=['crédito','credito','depósito','deposito','salário','recebimento','transferência recebida','transf. recebida','pix recebido','pix de','ted recebido','ted de','doc recebido','rendimento','devolução','reembolso'];
+
+  function detectarTipo(desc,valStr){
+    const d=desc.toLowerCase();
+    // Se tem indicador explícito de D/C no valor
+    if(/\bD\b/.test(valStr)||valStr.startsWith('-'))return's';
+    if(/\bC\b/.test(valStr)||valStr.startsWith('+'))return'e';
+    // Por palavras-chave
+    if(kwSaida.some(k=>d.includes(k)))return's';
+    if(kwEntrada.some(k=>d.includes(k)))return'e';
+    return null; // indefinido
+  }
+
+  function parsarValor(v){
+    return parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));
+  }
+
+  function parsarData(dataStr){
+    const parts=dataStr.replace(/\//g,'-').split('-');
+    if(parts.length>=2){
+      const dia=parts[0].padStart(2,'0');
+      const mes=parts[1].padStart(2,'0');
+      const ano=parts.length>=3?(parts[2].length===2?'20'+parts[2]:parts[2]):anoAtual;
+      return`${ano}-${mes}-${dia}`;
+    }
+    return null;
+  }
+
+  // Padrões de linha de extrato (do mais específico ao mais genérico)
+  const padroes=[
+    // "02/01/2025  PIX RECEBIDO DE JOAO  +1.500,00"
+    /^(\d{2}[\/-]\d{2}[\/-]?\d{0,4})\s+(.{5,60}?)\s+([\+\-]?\s*[\d\.]+,\d{2})\s*([DC]?)$/,
+    // "02/01  PIX RECEBIDO DE JOAO  1.500,00  C"
+    /^(\d{2}[\/-]\d{2})\s+(.{5,60}?)\s+([\d\.]+,\d{2})\s+([DC])$/,
+    // "02/01  PIX RECEBIDO DE JOAO  1.500,00"
+    /^(\d{2}[\/-]\d{2})\s+(.{5,60}?)\s+([\+\-]?[\d\.]+,\d{2})$/,
+    // "02/01/2025 - DESCRICAO - 1.500,00"
+    /^(\d{2}[\/-]\d{2}[\/-]?\d{0,4})\s*[-–]\s*(.{5,60}?)\s*[-–]\s*([\+\-]?[\d\.]+,\d{2})$/,
+  ];
+
+  linhas.forEach(linha=>{
+    for(const pat of padroes){
+      const m=linha.match(pat);
+      if(m){
+        const dataStr=m[1];const desc=m[2].trim();const valStr=m[3].trim();const flag=(m[4]||'').trim();
+        const val=parsarValor(valStr);
+        if(isNaN(val)||val<=0||val>10000000)continue;
+        const dataFmt=parsarData(dataStr);
+        if(!dataFmt)continue;
+
+        // Determinar tipo
+        let tipo=null;
+        if(flag==='C'||flag==='CR')tipo='e';
+        else if(flag==='D'||flag==='DB')tipo='s';
+        else if(valStr.startsWith('-'))tipo='s';
+        else if(valStr.startsWith('+'))tipo='e';
+        else tipo=detectarTipo(desc,valStr);
+
+        if(!tipo)tipo='s'; // padrão: saída se não identificado
+
+        // Sugerir categoria
+        const d=desc.toLowerCase();
+        let cat=tipo==='e'?'Outras entradas':'Outras saídas';
+        if(d.includes('salário')||d.includes('folha'))cat='Outras entradas';
+        if(d.includes('pix de')||d.includes('ted de')||d.includes('transf. recebida'))cat='Outras entradas';
+        if(d.includes('matéria')||d.includes('compra')||d.includes('fornec'))cat='Matéria-prima';
+        if(d.includes('aluguel')||d.includes('locação'))cat='Aluguel / energia';
+        if(d.includes('energia')||d.includes('eletric')||d.includes('copel')||d.includes('cemig')||d.includes('enel'))cat='Aluguel / energia';
+        if(d.includes('frete')||d.includes('transporta')||d.includes('logística'))cat='Frete / logística';
+        if(d.includes('manutenção')||d.includes('reparo'))cat='Manutenção';
+        if(d.includes('imposto')||d.includes('tributo')||d.includes('simples')||d.includes('darf'))cat='Impostos/tributos';
+        if(d.includes('tarifa')||d.includes('taxa bancária')||d.includes('anuidade'))cat='Outras saídas';
+
+        lancamentos.push({data:dataFmt,desc,val,tipo,cat});
+        break;
       }
-    });
-    if(!lancamentos.length){result.innerHTML+='<div class="pdf-result" style="color:var(--amber)">⚠ Não foi possível identificar lançamentos automaticamente neste arquivo.<br>Dica: use o arquivo de texto (.txt) ou CSV exportado pelo seu banco.</div>';preview.innerHTML='';return;}
-    result.innerHTML+=`<div class="pdf-result" style="color:var(--green)">✓ ${lancamentos.length} lançamento(s) identificado(s). Revise abaixo e confirme os que deseja importar.</div>`;
-    preview.innerHTML=`<div class="card"><div class="card-header"><div class="card-title">Lançamentos identificados</div><button class="btn btn-green btn-sm" onclick="importarTodos()">↓ Importar todos</button></div>
-    <table><thead><tr><th><input type="checkbox" id="chkAll" onchange="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=this.checked)"></th><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Conta</th></tr></thead><tbody>
-    ${lancamentos.map((l,i)=>`<tr>
-      <td><input type="checkbox" class="chk-imp" checked data-i="${i}"></td>
-      <td class="mono" style="font-size:11px">${fmtDFull(l.data)}</td>
-      <td>${l.desc}</td>
-      <td><span class="badge badge-${l.tipo}">${l.tipo==='e'?'▲ Entrada':'▼ Saída'}</span></td>
-      <td class="${l.tipo==='e'?'val-pos':'val-neg'}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td>
-      <td><select class="form-select" style="padding:3px 6px;font-size:11px;width:100px;" id="imp-conta-${i}"><option value="itau">Itaú</option><option value="bradesco">Bradesco</option><option value="caixa">Caixa</option></select></td>
-    </tr>`).join('')}
-    </tbody></table>
-    <div style="padding:14px 20px;"><button class="btn btn-green" onclick="importarSelecionados(${JSON.stringify(lancamentos).replace(/"/g,"'")})">↓ Importar selecionados</button></div></div>`;
-    window._pdfLancs=lancamentos;
-  };
-  if(file.name.endsWith('.pdf')){result.innerHTML='<div class="pdf-result" style="color:var(--amber)">⚠ PDFs precisam ser convertidos primeiro.<br><strong>Como fazer:</strong> No banco, exporte o extrato como <strong>TXT ou CSV</strong> e carregue aqui. Ou abra o PDF, selecione todo o texto (Ctrl+A), cole em um .txt e carregue.</div>';return;}
-  reader.readAsText(file,'UTF-8');
+    }
+  });
+
+  if(!lancamentos.length){
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado automaticamente.<br><br>
+    <strong>Possíveis causas:</strong><br>
+    • O PDF é uma imagem escaneada (sem texto selecionável)<br>
+    • O formato do extrato é diferente do padrão<br><br>
+    <strong>Solução:</strong> No seu banco, exporte o extrato como <strong>OFX, CSV ou TXT</strong> e tente novamente.</div>`;
+    preview.innerHTML='';return;
+  }
+
+  const entradas=lancamentos.filter(l=>l.tipo==='e');
+  const saidas=lancamentos.filter(l=>l.tipo==='s');
+  result.innerHTML=`<div class="pdf-result" style="color:var(--green)">
+    ✓ <strong>${lancamentos.length} lançamento(s) identificado(s)</strong> — 
+    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmt(entradas.reduce((a,l)=>a+l.val,0))})</span> · 
+    <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmt(saidas.reduce((a,l)=>a+l.val,0))})</span><br>
+    <small>Revise o tipo de cada lançamento antes de importar.</small>
+  </div>`;
+
+  window._pdfLancs=lancamentos;
+
+  preview.innerHTML=`<div class="card"><div class="card-header">
+    <div class="card-title">Lançamentos identificados</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-outline btn-sm" onclick="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=true)">Marcar todos</button>
+      <button class="btn btn-green" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
+    </div>
+  </div>
+  <table><thead><tr>
+    <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=this.checked)"></th>
+    <th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Conta</th>
+  </tr></thead><tbody>
+  ${lancamentos.map((l,i)=>`<tr>
+    <td><input type="checkbox" class="chk-imp" checked data-i="${i}"></td>
+    <td class="mono" style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
+    <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
+    <td>
+      <select style="background:${l.tipo==='e'?'var(--green-dim)':'var(--red-dim)'};color:${l.tipo==='e'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;" id="imp-tipo-${i}" onchange="atualizarLinhaPdf(${i},this.value)">
+        <option value="e" ${l.tipo==='e'?'selected':''}>▲ Entrada</option>
+        <option value="s" ${l.tipo==='s'?'selected':''}>▼ Saída</option>
+      </select>
+    </td>
+    <td>
+      <select class="form-select" style="padding:3px 6px;font-size:11px;min-width:140px;" id="imp-cat-${i}">
+        ${[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===l.cat?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </td>
+    <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td>
+    <td><select class="form-select" style="padding:3px 6px;font-size:11px;width:90px;" id="imp-conta-${i}">
+      <option value="itau">Itaú</option>
+      <option value="bradesco">Bradesco</option>
+      <option value="caixa">Caixa</option>
+    </select></td>
+  </tr>`).join('')}
+  </tbody></table>
+  <div style="padding:14px 20px;border-top:1px solid var(--border);">
+    <button class="btn btn-green" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
+  </div></div>`;
+}
+
+function atualizarLinhaPdf(i,tipo){
+  window._pdfLancs[i].tipo=tipo;
+  const valEl=document.getElementById('imp-val-'+i);
+  const sel=document.getElementById('imp-tipo-'+i);
+  valEl.className=tipo==='e'?'val-pos':'val-neg';
+  valEl.textContent=(tipo==='e'?'+':'-')+fmt(window._pdfLancs[i].val);
+  sel.style.background=tipo==='e'?'var(--green-dim)':'var(--red-dim)';
+  sel.style.color=tipo==='e'?'var(--green)':'var(--red)';
 }
 async function importarSelecionados(lancs){
   const checks=document.querySelectorAll('.chk-imp:checked');
@@ -1418,6 +1746,123 @@ function exportarDREPDF(){
   const rows=[['Receita Bruta',fmt(rec)],['CMV',fmt(cmv)],['Margem Bruta',fmt(mb),''+fmtPct(rec?mb/rec:0)],['Despesas Operacionais',fmt(desp)],['EBITDA',fmt(ebitda),''+fmtPct(rec?ebitda/rec:0)],['Lucro Líquido',fmt(lucro),''+fmtPct(rec?lucro/rec:0)]];
   let y=35;rows.forEach(r=>{doc.setFontSize(11);doc.text(r[0],14,y);doc.text(r[1],120,y);if(r[2])doc.text(r[2],165,y);y+=10;});
   doc.save('DRE_'+key+'.pdf');
+}
+
+// ══ LEITOR DE NF / FOTO (Claude API) ══
+function handleNFDrop(e,modo){e.preventDefault();document.getElementById(modo==='pagar'?'nfPayDrop':'nfRecDrop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handleNFFile(f,modo);}
+
+async function handleNFFile(file,modo){
+  if(!file)return;
+  const statusEl=document.getElementById(modo==='pagar'?'nfPayStatus':'nfRecStatus');
+  statusEl.innerHTML=`<div class="pdf-result"><span style="color:var(--green)">⚙ Lendo o documento com IA... aguarde.</span></div>`;
+
+  try{
+    let contentArr=[];
+    const ext=file.name.split('.').pop().toLowerCase();
+
+    if(ext==='pdf'){
+      // PDF: extrai texto com PDF.js
+      const arrayBuffer=await file.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+      let texto='';
+      for(let p=1;p<=pdf.numPages;p++){
+        const page=await pdf.getPage(p);
+        const content=await page.getTextContent();
+        const linhaMap={};
+        content.items.forEach(item=>{const y=Math.round(item.transform[5]);if(!linhaMap[y])linhaMap[y]=[];linhaMap[y].push({x:item.transform[4],text:item.str});});
+        Object.keys(linhaMap).sort((a,b)=>b-a).forEach(y=>{texto+=linhaMap[y].sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ')+'\n';});
+      }
+      contentArr=[{type:'text',text:'Texto extraído do PDF:\n\n'+texto}];
+    } else {
+      // Imagem: envia como base64
+      const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file);});
+      const mimeType=file.type||'image/jpeg';
+      contentArr=[
+        {type:'image',source:{type:'base64',media_type:mimeType,data:base64}},
+        {type:'text',text:'Esta é uma imagem de documento financeiro.'}
+      ];
+    }
+
+    const prompt=modo==='pagar'
+      ? `Analise este documento financeiro (nota fiscal, boleto, vale ou comprovante) e extraia as informações para lançar como CONTA A PAGAR. Responda SOMENTE com JSON válido, sem texto extra:\n{"descricao":"nome do fornecedor ou descrição da despesa","valor":0.00,"vencimento":"YYYY-MM-DD","categoria":"uma das: Matéria-prima, Mão de obra direta, Folha administrativa, Aluguel / energia, Manutenção, Frete / logística, Impostos/tributos, Outras saídas","observacao":"qualquer info relevante"}\nSe não encontrar algum campo, use null. Para vencimento, use a data de vencimento do boleto ou data de pagamento. Data de hoje: ${today()}`
+      : `Analise este documento financeiro (nota fiscal, comprovante de venda ou recebimento) e extraia as informações para lançar como CONTA A RECEBER. Responda SOMENTE com JSON válido, sem texto extra:\n{"descricao":"nome do cliente ou descrição da venda","valor":0.00,"vencimento":"YYYY-MM-DD","cliente":"nome do cliente","observacao":"qualquer info relevante"}\nSe não encontrar algum campo, use null. Para vencimento, use a data de vencimento ou prazo de pagamento. Data de hoje: ${today()}`;
+
+    contentArr.push({type:'text',text:prompt});
+
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:500,
+        messages:[{role:'user',content:contentArr}]
+      })
+    });
+
+    const data=await resp.json();
+    if(data.error){throw new Error(data.error.message);}
+
+    const texto=data.content.map(c=>c.text||'').join('');
+    const jsonMatch=texto.match(/\{[\s\S]*\}/);
+    if(!jsonMatch)throw new Error('Não foi possível extrair os dados.');
+    const info=JSON.parse(jsonMatch[0]);
+
+    // Preenche os campos automaticamente
+    if(modo==='pagar'){
+      if(info.descricao)document.getElementById('cpDesc').value=info.descricao;
+      if(info.valor)document.getElementById('cpVal').value=info.valor;
+      if(info.vencimento)document.getElementById('cpVenc').value=info.vencimento;
+      if(info.categoria){const sel=document.getElementById('cpCat');for(let i=0;i<sel.options.length;i++){if(sel.options[i].text===info.categoria){sel.selectedIndex=i;break;}}}
+    } else {
+      if(info.descricao)document.getElementById('crDesc').value=info.descricao;
+      if(info.valor)document.getElementById('crVal').value=info.valor;
+      if(info.vencimento)document.getElementById('crVenc').value=info.vencimento;
+      if(info.cliente)document.getElementById('crCliente').value=info.cliente;
+    }
+
+    statusEl.innerHTML=`<div class="pdf-result" style="color:var(--green)">
+      ✓ Documento lido com sucesso! Campos preenchidos automaticamente.<br>
+      <small style="color:var(--muted)">Revise os dados antes de adicionar. ${info.observacao?'Obs: '+info.observacao:''}</small>
+    </div>`;
+
+  }catch(err){
+    statusEl.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro ao ler o documento: ${err.message}</div>`;
+  }
+}
+
+// ══ CATEGORIAS ══
+async function saveCats(){
+  await SB.from('cf3_config').upsert({chave:'categorias',dados:JSON.stringify({e:CATS_E,s:CATS_S})},{onConflict:'chave'});
+}
+function addCat(tipo){
+  const input=document.getElementById(tipo==='e'?'newCatE':'newCatS');
+  const nome=input.value.trim();
+  if(!nome){alert('Digite o nome da categoria.');return;}
+  if(tipo==='e'){if(CATS_E.includes(nome)){alert('Categoria já existe.');return;}CATS_E.push(nome);}
+  else{if(CATS_S.includes(nome)){alert('Categoria já existe.');return;}CATS_S.push(nome);}
+  input.value='';
+  saveCats();renderCats();
+  setTipo(tipoAtual);setTipoRec(tipoRec);
+}
+function delCat(tipo,nome){
+  if(!confirm(`Remover categoria "${nome}"?`))return;
+  if(tipo==='e')CATS_E=CATS_E.filter(c=>c!==nome);
+  else CATS_S=CATS_S.filter(c=>c!==nome);
+  saveCats();renderCats();
+  setTipo(tipoAtual);setTipoRec(tipoRec);
+}
+function renderCats(){
+  const renderLista=(cats,tipo,elId)=>{
+    const el=document.getElementById(elId);
+    if(!el)return;
+    el.innerHTML=cats.map(c=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span style="font-size:13px;">${c}</span>
+        <button class="btn btn-sm btn-danger" onclick="delCat('${tipo}','${c.replace(/'/g,"\\'")}')">✕</button>
+      </div>`).join('');
+  };
+  renderLista(CATS_E,'e','listCatE');
+  renderLista(CATS_S,'s','listCatS');
 }
 
 if(sessionStorage.getItem('cf4_auth')==='1'){init();}
