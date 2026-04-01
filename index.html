@@ -1542,107 +1542,150 @@ function parsearExtrato(texto,result,preview){
   const hoje=new Date();
   const anoAtual=String(hoje.getFullYear());
 
-  // Palavras-chave que indicam SAÍDA
-  const kwSaida=['pagamento','pag.','pag ','débito','debito','saque','ted','doc','tarifa','taxa','juros','iof','boleto','compra','picpay','mercado','uber','ifood','amazon','rappi','99','transferência enviada','transf. enviada','transferência para','transf. para','pix enviado','pix para','resgat'];
-  // Palavras-chave que indicam ENTRADA
-  const kwEntrada=['crédito','credito','depósito','deposito','salário','recebimento','transferência recebida','transf. recebida','pix recebido','pix de','ted recebido','ted de','doc recebido','rendimento','devolução','reembolso'];
+  // Linhas a IGNORAR (saldos, cabeçalhos, informativos)
+  const ignorar=[
+    'saldo anterior','saldo total disponível','saldo movimentação','saldo aplic',
+    'saldo parcial','limite da conta','lançamentos do período','data lançamentos',
+    'razão social','cnpj/cpf','valor (r$)','saldo (r$)','aviso','atualizado em',
+    'em caso de dúvidas','reclamações','deficiente','ouvidoria','fale conosco',
+    'agência','conta corrente','banco','unidade',
+  ];
 
-  function detectarTipo(desc,valStr){
-    const d=desc.toLowerCase();
-    // Se tem indicador explícito de D/C no valor
-    if(/\bD\b/.test(valStr)||valStr.startsWith('-'))return's';
-    if(/\bC\b/.test(valStr)||valStr.startsWith('+'))return'e';
-    // Por palavras-chave
-    if(kwSaida.some(k=>d.includes(k)))return's';
-    if(kwEntrada.some(k=>d.includes(k)))return'e';
-    return null; // indefinido
-  }
-
-  function parsarValor(v){
-    return parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));
+  function deveIgnorar(linha){
+    const l=linha.toLowerCase();
+    return ignorar.some(p=>l.includes(p));
   }
 
   function parsarData(dataStr){
-    const parts=dataStr.replace(/\//g,'-').split('-');
-    if(parts.length>=2){
-      const dia=parts[0].padStart(2,'0');
-      const mes=parts[1].padStart(2,'0');
-      const ano=parts.length>=3?(parts[2].length===2?'20'+parts[2]:parts[2]):anoAtual;
-      return`${ano}-${mes}-${dia}`;
-    }
-    return null;
+    // Aceita DD/MM/AAAA ou DD/MM/AA
+    const m=dataStr.match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/);
+    if(!m)return null;
+    const dia=m[1],mes=m[2],ano=m[3].length===2?'20'+m[3]:m[3];
+    return`${ano}-${mes}-${dia}`;
   }
 
-  // Padrões de linha de extrato (do mais específico ao mais genérico)
-  const padroes=[
-    // "02/01/2025  PIX RECEBIDO DE JOAO  +1.500,00"
-    /^(\d{2}[\/-]\d{2}[\/-]?\d{0,4})\s+(.{5,60}?)\s+([\+\-]?\s*[\d\.]+,\d{2})\s*([DC]?)$/,
-    // "02/01  PIX RECEBIDO DE JOAO  1.500,00  C"
-    /^(\d{2}[\/-]\d{2})\s+(.{5,60}?)\s+([\d\.]+,\d{2})\s+([DC])$/,
-    // "02/01  PIX RECEBIDO DE JOAO  1.500,00"
-    /^(\d{2}[\/-]\d{2})\s+(.{5,60}?)\s+([\+\-]?[\d\.]+,\d{2})$/,
-    // "02/01/2025 - DESCRICAO - 1.500,00"
-    /^(\d{2}[\/-]\d{2}[\/-]?\d{0,4})\s*[-–]\s*(.{5,60}?)\s*[-–]\s*([\+\-]?[\d\.]+,\d{2})$/,
-  ];
+  function parsarValor(v){
+    // Remove tudo exceto dígitos, vírgula e sinal
+    const neg=v.startsWith('-');
+    const num=parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));
+    return neg?-num:num;
+  }
 
-  linhas.forEach(linha=>{
-    for(const pat of padroes){
-      const m=linha.match(pat);
-      if(m){
-        const dataStr=m[1];const desc=m[2].trim();const valStr=m[3].trim();const flag=(m[4]||'').trim();
-        const val=parsarValor(valStr);
-        if(isNaN(val)||val<=0||val>10000000)continue;
-        const dataFmt=parsarData(dataStr);
-        if(!dataFmt)continue;
+  function sugerirCategoria(desc,tipo){
+    const d=desc.toLowerCase();
+    if(tipo==='e'){
+      if(d.includes('pix recebido')||d.includes('ted recebida')||d.includes('boleto recebido'))return'Outras entradas';
+      if(d.includes('rendimento')||d.includes('rend pago')||d.includes('res aplic'))return'Outras entradas';
+      if(d.includes('recebimento')||d.includes('sispag')&&!d.includes('salario'))return'Outras entradas';
+      return'Outras entradas';
+    } else {
+      if(d.includes('sispag salario')||d.includes('salários')||d.includes('salarios'))return'Mão de obra direta';
+      if(d.includes('pix enviado')||d.includes('ted enviada'))return'Outras saídas';
+      if(d.includes('boleto pago'))return'Matéria-prima';
+      if(d.includes('enel')||d.includes('eletropaulo')||d.includes('cpfl')||d.includes('energisa')||d.includes('cemig')||d.includes('copel')||d.includes('sabesp')||d.includes('sanepar'))return'Aluguel / energia';
+      if(d.includes('simples nacional')||d.includes('darf')||d.includes('gnre')||d.includes('dare')||d.includes('trib cod'))return'Impostos/tributos';
+      if(d.includes('tar ')||d.includes('tarifa')||d.includes('tar/custas')||d.includes('plano adapt'))return'Outras saídas';
+      if(d.includes('seguro')||d.includes('seg vida'))return'Outras saídas';
+      if(d.includes('frete')||d.includes('transporta'))return'Frete / logística';
+      if(d.includes('aluguel')||d.includes('residencial'))return'Aluguel / energia';
+      if(d.includes('sindicato'))return'Mão de obra direta';
+      if(d.includes('pagamento')||d.includes('pagamentos'))return'Outras saídas';
+      if(d.includes('da ')||d.includes('business'))return'Outras saídas';
+      return'Outras saídas';
+    }
+  }
 
-        // Determinar tipo
-        let tipo=null;
-        if(flag==='C'||flag==='CR')tipo='e';
-        else if(flag==='D'||flag==='DB')tipo='s';
-        else if(valStr.startsWith('-'))tipo='s';
-        else if(valStr.startsWith('+'))tipo='e';
-        else tipo=detectarTipo(desc,valStr);
+  // Parser específico para extrato Itaú
+  // Formato: DD/MM/AAAA  DESCRICAO  [RAZAO SOCIAL]  [CNPJ]  VALOR
+  // O PDF.js extrai linha por linha com espaços
 
-        if(!tipo)tipo='s'; // padrão: saída se não identificado
+  // Padrão principal: linha começa com data + termina com valor com sinal
+  const patLinhaCompleta=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
+  // Padrão alternativo: valor sem data na mesma linha (continuação)
+  const patValorSozinho=/^([-]?[\d\.]+,\d{2})$/;
+  // Data sozinha no início
+  const patData=/^\d{2}\/\d{2}\/\d{4}$/;
 
-        // Sugerir categoria
-        const d=desc.toLowerCase();
-        let cat=tipo==='e'?'Outras entradas':'Outras saídas';
-        if(d.includes('salário')||d.includes('folha'))cat='Outras entradas';
-        if(d.includes('pix de')||d.includes('ted de')||d.includes('transf. recebida'))cat='Outras entradas';
-        if(d.includes('matéria')||d.includes('compra')||d.includes('fornec'))cat='Matéria-prima';
-        if(d.includes('aluguel')||d.includes('locação'))cat='Aluguel / energia';
-        if(d.includes('energia')||d.includes('eletric')||d.includes('copel')||d.includes('cemig')||d.includes('enel'))cat='Aluguel / energia';
-        if(d.includes('frete')||d.includes('transporta')||d.includes('logística'))cat='Frete / logística';
-        if(d.includes('manutenção')||d.includes('reparo'))cat='Manutenção';
-        if(d.includes('imposto')||d.includes('tributo')||d.includes('simples')||d.includes('darf'))cat='Impostos/tributos';
-        if(d.includes('tarifa')||d.includes('taxa bancária')||d.includes('anuidade'))cat='Outras saídas';
+  let dataAtual=null;
+  let descAtual=null;
+  let buffer='';
 
-        lancamentos.push({data:dataFmt,desc,val,tipo,cat});
-        break;
+  linhas.forEach((linha,idx)=>{
+    if(deveIgnorar(linha))return;
+
+    // Tenta match completo: data + desc + valor na mesma linha
+    const mCompleto=linha.match(patLinhaCompleta);
+    if(mCompleto){
+      const data=parsarData(mCompleto[1]);
+      const desc=mCompleto[2].trim();
+      const val=parsarValor(mCompleto[3]);
+      if(data&&Math.abs(val)>0.1&&Math.abs(val)<10000000){
+        const tipo=val<0?'s':'e';
+        const cat=sugerirCategoria(desc,tipo);
+        lancamentos.push({data,desc,val:Math.abs(val),tipo,cat});
       }
+      dataAtual=null;descAtual=null;
+      return;
+    }
+
+    // Linha só com data — salva para próxima
+    if(patData.test(linha)){
+      dataAtual=parsarData(linha);
+      descAtual=null;
+      return;
+    }
+
+    // Se temos data salva, essa linha pode ser descrição + valor
+    if(dataAtual){
+      // Tenta extrair valor no final
+      const mValFinal=linha.match(/^(.+?)\s+([-]?[\d\.]+,\d{2})$/);
+      if(mValFinal){
+        const desc=mValFinal[1].trim();
+        const val=parsarValor(mValFinal[2]);
+        if(Math.abs(val)>0.1&&Math.abs(val)<10000000&&!deveIgnorar(desc)){
+          const tipo=val<0?'s':'e';
+          const cat=sugerirCategoria(desc,tipo);
+          lancamentos.push({data:dataAtual,desc,val:Math.abs(val),tipo,cat});
+        }
+        dataAtual=null;descAtual=null;
+        return;
+      }
+      // Linha sem valor = parte da descrição
+      if(!deveIgnorar(linha)){descAtual=(descAtual?descAtual+' ':'')+linha;}
     }
   });
 
-  if(!lancamentos.length){
-    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado automaticamente.<br><br>
-    <strong>Possíveis causas:</strong><br>
-    • O PDF é uma imagem escaneada (sem texto selecionável)<br>
-    • O formato do extrato é diferente do padrão<br><br>
-    <strong>Solução:</strong> No seu banco, exporte o extrato como <strong>OFX, CSV ou TXT</strong> e tente novamente.</div>`;
+  // Remove duplicatas por data+desc+val
+  const vistos=new Set();
+  const unicos=lancamentos.filter(l=>{
+    const k=`${l.data}|${l.val}|${l.tipo}`;
+    if(vistos.has(k))return false;
+    vistos.add(k);return true;
+  });
+
+  // Filtra entradas de aplicação automática (APL/RES APLIC) — são internas do banco
+  const filtrados=unicos.filter(l=>{
+    const d=l.desc.toLowerCase();
+    // Remove aplicações automáticas internas (APL/RES que se compensam)
+    if(d.includes('apl aplic aut')||d.includes('res aplic aut')||d.includes('aplic aut mais'))return false;
+    return true;
+  });
+
+  if(!filtrados.length){
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado.<br>Verifique se o PDF é do extrato bancário Itaú e tente novamente.</div>`;
     preview.innerHTML='';return;
   }
 
-  const entradas=lancamentos.filter(l=>l.tipo==='e');
-  const saidas=lancamentos.filter(l=>l.tipo==='s');
+  const entradas=filtrados.filter(l=>l.tipo==='e');
+  const saidas=filtrados.filter(l=>l.tipo==='s');
   result.innerHTML=`<div class="pdf-result" style="color:var(--green)">
-    ✓ <strong>${lancamentos.length} lançamento(s) identificado(s)</strong> — 
-    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmt(entradas.reduce((a,l)=>a+l.val,0))})</span> · 
+    ✓ <strong>${filtrados.length} lançamento(s) identificado(s)</strong> —
+    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmt(entradas.reduce((a,l)=>a+l.val,0))})</span> ·
     <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmt(saidas.reduce((a,l)=>a+l.val,0))})</span><br>
-    <small>Revise o tipo de cada lançamento antes de importar.</small>
+    <small style="color:var(--muted)">Aplicações automáticas do banco foram filtradas. Revise o tipo e categoria antes de importar.</small>
   </div>`;
 
-  window._pdfLancs=lancamentos;
+  window._pdfLancs=filtrados;
 
   preview.innerHTML=`<div class="card"><div class="card-header">
     <div class="card-title">Lançamentos identificados</div>
@@ -1655,10 +1698,10 @@ function parsearExtrato(texto,result,preview){
     <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=this.checked)"></th>
     <th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Conta</th>
   </tr></thead><tbody>
-  ${lancamentos.map((l,i)=>`<tr>
+  ${filtrados.map((l,i)=>`<tr>
     <td><input type="checkbox" class="chk-imp" checked data-i="${i}"></td>
     <td class="mono" style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
-    <td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
+    <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
     <td>
       <select style="background:${l.tipo==='e'?'var(--green-dim)':'var(--red-dim)'};color:${l.tipo==='e'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;" id="imp-tipo-${i}" onchange="atualizarLinhaPdf(${i},this.value)">
         <option value="e" ${l.tipo==='e'?'selected':''}>▲ Entrada</option>
