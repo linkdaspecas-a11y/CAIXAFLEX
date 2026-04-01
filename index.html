@@ -514,10 +514,26 @@ tr:hover td{background:var(--surface2);}
     <div class="card-body">
       <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr auto;">
         <div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-input" id="cpDesc" placeholder="Ex: Fornecedor Borracha"></div>
-        <div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-input" id="cpVal" placeholder="0,00"></div>
-        <div class="form-group"><label class="form-label">Vencimento</label><input type="date" class="form-input" id="cpVenc"></div>
+        <div class="form-group"><label class="form-label">Valor total (R$)</label><input type="number" class="form-input" id="cpVal" placeholder="0,00" oninput="calcParcelaCp()"></div>
+        <div class="form-group"><label class="form-label">1ª vencimento</label><input type="date" class="form-input" id="cpVenc" onchange="gerarCamposParcelas()"></div>
         <div class="form-group"><label class="form-label">Categoria</label><select class="form-select" id="cpCat"></select></div>
         <button class="btn btn-green" onclick="addCP()">+ Adicionar</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:12px;padding:12px 14px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border);">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="cpParcelado" onchange="toggleParcelamento(this.checked)" style="accent-color:var(--green);">
+          Parcelado
+        </label>
+        <div id="cpParcelaCampos" style="display:none;flex-direction:column;gap:10px;width:100%;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Nº de parcelas</label>
+              <input type="number" class="form-input" id="cpParcelas" value="2" min="2" max="60" style="width:80px;" oninput="calcParcelaCp()">
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:16px" id="cpParcelaInfo"></div>
+          </div>
+          <div id="cpParcelasGrid" style="background:var(--surface);border-radius:var(--radius-sm);padding:0 12px;border:1px solid var(--border);"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1035,15 +1051,64 @@ function renderRecorrTable(){
 }
 
 // ══ CONTAS A PAGAR ══
+function toggleParcelamento(on){
+  document.getElementById('cpParcelaCampos').style.display=on?'flex':'none';
+  if(on)gerarCamposParcelas();
+}
+function calcParcelaCp(){
+  const val=parseFloat(document.getElementById('cpVal').value)||0;
+  const n=parseInt(document.getElementById('cpParcelas').value)||1;
+  const info=document.getElementById('cpParcelaInfo');
+  if(info)info.textContent=`Cada parcela: ${fmtDec(val/n)}`;
+  gerarCamposParcelas();
+}
+function gerarCamposParcelas(){
+  const val=parseFloat(document.getElementById('cpVal').value)||0;
+  const n=parseInt(document.getElementById('cpParcelas').value)||1;
+  const vencBase=document.getElementById('cpVenc').value;
+  const valParcela=parseFloat((val/n).toFixed(2));
+  const container=document.getElementById('cpParcelasGrid');
+  if(!container)return;
+  container.innerHTML=Array.from({length:n},(_,i)=>{
+    // Calcula data sugerida automaticamente
+    let dataSug='';
+    if(vencBase){
+      const d=new Date(vencBase+'T12:00:00');
+      d.setMonth(d.getMonth()+i);
+      dataSug=d.toISOString().split('T')[0];
+    }
+    const valThis=i===n-1?parseFloat((val-(valParcela*(n-1))).toFixed(2)):valParcela;
+    return`<div style="display:grid;grid-template-columns:80px 150px 130px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace">Parcela ${i+1}/${n}</span>
+      <input type="date" class="form-input" id="cpDataParc-${i}" value="${dataSug}" style="padding:6px 10px;font-size:12px;">
+      <input type="number" class="form-input" id="cpValParc-${i}" value="${valThis}" style="padding:6px 10px;font-size:12px;font-family:'DM Mono',monospace;">
+    </div>`;
+  }).join('');
+}
 function addCP(){
   const desc=document.getElementById('cpDesc').value.trim();
-  const val=parseFloat(document.getElementById('cpVal').value);
+  const valTotal=parseFloat(document.getElementById('cpVal').value);
   const venc=document.getElementById('cpVenc').value;
   const cat=document.getElementById('cpCat').value;
-  if(!desc||!val||!venc){alert('Preencha todos os campos.');return;}
-  CP.push({id:Date.now(),desc,val,venc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
+  const parcelado=document.getElementById('cpParcelado').checked;
+  const nParcelas=parcelado?parseInt(document.getElementById('cpParcelas').value)||1:1;
+  if(!desc||!valTotal){alert('Preencha descrição e valor.');return;}
+  if(!parcelado&&!venc){alert('Preencha o vencimento.');return;}
+  if(parcelado){
+    for(let i=0;i<nParcelas;i++){
+      const dataVenc=document.getElementById('cpDataParc-'+i)?.value;
+      const val=parseFloat(document.getElementById('cpValParc-'+i)?.value)||0;
+      if(!dataVenc){alert(`Preencha a data da parcela ${i+1}.`);return;}
+      const descParcela=`${desc} (${i+1}/${nParcelas})`;
+      CP.push({id:Date.now()+i,desc:descParcela,val,venc:dataVenc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
+    }
+  } else {
+    CP.push({id:Date.now(),desc,val:valTotal,venc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
+  }
   saveCP();renderCPTable();updateCPKPIs();updateAll();
   document.getElementById('cpDesc').value='';document.getElementById('cpVal').value='';
+  document.getElementById('cpParcelado').checked=false;
+  toggleParcelamento(false);
 }
 function pagarCP(id){
   const cp=CP.find(c=>c.id===id);if(!cp)return;
