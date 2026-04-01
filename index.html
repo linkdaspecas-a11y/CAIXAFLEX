@@ -346,8 +346,13 @@ tr:hover td{background:var(--surface2);}
 <!-- ══ DASHBOARD ══ -->
 <div class="view active" id="view-dashboard">
   <div class="page-header">
-    <div><div class="page-title">Dashboard</div><div class="page-sub">Visão geral financeira</div></div>
-    <div style="display:flex;gap:8px;">
+    <div><div class="page-title">Dashboard</div><div class="page-sub" id="dash-periodo">Visão geral financeira</div></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <select class="form-input" id="dash-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="updateAll()"></select>
+      <select class="form-input" id="dash-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="updateAll()">
+        <option value="todos">Todos os meses</option>
+        ${[...Array(12)].map((_,i)=>`<option value="${i+1}">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][i]}</option>`).join('')}
+      </select>
       <button class="btn btn-outline btn-sm" onclick="exportarPDF()">↓ PDF</button>
       <button class="btn btn-outline btn-sm" onclick="exportarExcel()">↓ Excel</button>
     </div>
@@ -489,7 +494,16 @@ tr:hover td{background:var(--surface2);}
 
 <!-- ══ CONTAS A PAGAR ══ -->
 <div class="view" id="view-contaspagar">
-  <div class="page-header"><div><div class="page-title">Contas a Pagar</div><div class="page-sub">Controle de vencimentos e pagamentos</div></div></div>
+  <div class="page-header">
+    <div><div class="page-title">Contas a Pagar</div><div class="page-sub">Controle de vencimentos e pagamentos</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select class="form-input" id="cp-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="renderCPTable();updateCPKPIs()"></select>
+      <select class="form-input" id="cp-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="renderCPTable();updateCPKPIs()">
+        <option value="todos">Todos os meses</option>
+        ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
+      </select>
+    </div>
+  </div>
   <div class="kpi-grid-3" style="margin-bottom:20px;">
     <div class="kpi-card red"><div class="kpi-label">Total pendente</div><div class="kpi-value red" id="cp-total">R$ 0</div></div>
     <div class="kpi-card amber"><div class="kpi-label">Vence hoje / atrasado</div><div class="kpi-value amber" id="cp-venc">R$ 0</div></div>
@@ -543,7 +557,16 @@ tr:hover td{background:var(--surface2);}
 
 <!-- ══ CONTAS A RECEBER ══ -->
 <div class="view" id="view-contasreceber">
-  <div class="page-header"><div><div class="page-title">Contas a Receber</div><div class="page-sub">Controle de recebimentos</div></div></div>
+  <div class="page-header">
+    <div><div class="page-title">Contas a Receber</div><div class="page-sub">Controle de recebimentos</div></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select class="form-input" id="cr-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="renderCRTable();updateCRKPIs()"></select>
+      <select class="form-input" id="cr-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="renderCRTable();updateCRKPIs()">
+        <option value="todos">Todos os meses</option>
+        ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
+      </select>
+    </div>
+  </div>
   <div class="kpi-grid-3" style="margin-bottom:20px;">
     <div class="kpi-card green"><div class="kpi-label">Total pendente</div><div class="kpi-value green" id="cr-total">R$ 0</div></div>
     <div class="kpi-card amber"><div class="kpi-label">Vence hoje / atrasado</div><div class="kpi-value amber" id="cr-venc">R$ 0</div></div>
@@ -916,7 +939,21 @@ async function init(){
   for(let y=t.getFullYear()-2;y<=t.getFullYear()+1;y++){const o=document.createElement('option');o.value=y;o.textContent=y;if(y===t.getFullYear())o.selected=true;anoSel.appendChild(o);}
   MESES.forEach((m,i)=>{const o=document.createElement('option');o.value=i+1;o.textContent=m;if(i===t.getMonth())o.selected=true;mesSel.appendChild(o);});
 
-  setTipo('e');setConta('itau');setTipoRec('s');setContaRec('itau');setTipoCheq('emitido');
+  // Popula filtros de ano do dashboard, CP e CR
+  ['dash-ano','cp-ano','cr-ano'].forEach(id=>{
+    const sel=document.getElementById(id);
+    if(!sel)return;
+    sel.innerHTML='<option value="todos">Todos anos</option>';
+    const anoAtual=t.getFullYear();
+    for(let y=anoAtual-2;y<=anoAtual+1;y++){
+      const o=document.createElement('option');o.value=y;o.textContent=y;
+      if(y===anoAtual)o.selected=true;
+      sel.appendChild(o);
+    }
+  });
+  // Seleciona mês atual nos filtros
+  const mesAtual=String(t.getMonth()+1).padStart(2,'0');
+  ['dash-mes','cp-mes','cr-mes'].forEach(id=>{const s=document.getElementById(id);if(s)s.value=mesAtual;});
   document.getElementById('recentTable').innerHTML='<div class="empty-state"><div class="empty-icon" style="animation:pulse 1s infinite">◈</div><div class="empty-text">Conectando...</div></div>';
   await loadAll();
   renderDRE();updateAll();
@@ -1135,17 +1172,28 @@ async function pagarCP(id){
 function delCP(id){CP=CP.filter(c=>c.id!==id);saveCP();renderCPTable();updateCPKPIs();updateAll();}
 function filterCP(f,el){filterCPAtual=f;document.querySelectorAll('#view-contaspagar .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCPTable();}
 function statusCP(c){const td=today();if(c.status==='pago')return'pago';if(c.venc<td)return'vencido';return'pendente';}
+function getCPFiltro(){const a=document.getElementById('cp-ano');const m=document.getElementById('cp-mes');return{ano:a?a.value:'todos',mes:m?m.value:'todos'};}
+function filtrarCP(){
+  const{ano,mes}=getCPFiltro();
+  return CP.filter(c=>{
+    if(ano!=='todos'&&!c.venc.startsWith(ano))return false;
+    if(mes!=='todos'&&c.venc.slice(5,7)!==mes)return false;
+    return true;
+  });
+}
 function updateCPKPIs(){
-  const pend=CP.filter(c=>statusCP(c)!=='pago');
+  const data=filtrarCP();
+  const pend=data.filter(c=>statusCP(c)!=='pago');
   const venc=pend.filter(c=>c.venc<=today());
-  const pagoMes=CP.filter(c=>c.status==='pago'&&c.pago_em&&c.pago_em.slice(0,7)===today().slice(0,7));
+  const pagoMes=data.filter(c=>c.status==='pago'&&c.pago_em&&c.pago_em.slice(0,7)===today().slice(0,7));
   setEl('cp-total',fmt(pend.reduce((a,c)=>a+c.val,0)));
   setEl('cp-venc',fmt(venc.reduce((a,c)=>a+c.val,0)));
   setEl('cp-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));
-  setEl('d-apagar',fmt(pend.reduce((a,c)=>a+c.val,0)));
-  const vencQtd=venc.length;
+  // KPI global (todos os pendentes)
+  const allPend=CP.filter(c=>statusCP(c)!=='pago');
+  setEl('d-apagar',fmt(allPend.reduce((a,c)=>a+c.val,0)));
+  const vencQtd=allPend.filter(c=>c.venc<=today()).length;
   setEl('d-apagar-venc',vencQtd>0?`${vencQtd} vencida(s)`:'');
-  // fill cat select
   const sel=document.getElementById('cpCat');if(sel&&!sel.options.length)CATS_S.forEach(c=>{const o=document.createElement('option');o.textContent=c;sel.appendChild(o);});
 }
 function editarCP(id){
@@ -1175,7 +1223,7 @@ function salvarCP(id){
 
 function renderCPTable(){
   const el=document.getElementById('cpTable');
-  let data=CP;const f=filterCPAtual;
+  let data=filtrarCP();const f=filterCPAtual;
   if(f==='pendente')data=data.filter(c=>statusCP(c)==='pendente');
   else if(f==='vencido')data=data.filter(c=>statusCP(c)==='vencido');
   else if(f==='pago')data=data.filter(c=>c.status==='pago');
@@ -1245,7 +1293,25 @@ async function receberCR(id){
 function delCR(id){if(!confirm('Excluir?'))return;CR=CR.filter(c=>c.id!==id);saveCR();renderCRTable();updateCRKPIs();updateAll();}
 function filterCR(f,el){filterCRAtual=f;document.querySelectorAll('#view-contasreceber .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCRTable();}
 function statusCR(c){if(c.status==='pago')return'pago';if(c.venc<today())return'vencido';return'pendente';}
-function updateCRKPIs(){const pend=CR.filter(c=>statusCR(c)!=='pago');const venc=pend.filter(c=>c.venc<=today());const pagoMes=CR.filter(c=>c.status==='pago'&&c.recebido_em&&c.recebido_em.slice(0,7)===today().slice(0,7));setEl('cr-total',fmt(pend.reduce((a,c)=>a+c.val,0)));setEl('cr-venc',fmt(venc.reduce((a,c)=>a+c.val,0)));setEl('cr-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));setEl('d-areceber',fmt(pend.reduce((a,c)=>a+c.val,0)));}
+function getCRFiltro(){const a=document.getElementById('cr-ano');const m=document.getElementById('cr-mes');return{ano:a?a.value:'todos',mes:m?m.value:'todos'};}
+function filtrarCR(){
+  const{ano,mes}=getCRFiltro();
+  return CR.filter(c=>{
+    if(ano!=='todos'&&!c.venc.startsWith(ano))return false;
+    if(mes!=='todos'&&c.venc.slice(5,7)!==mes)return false;
+    return true;
+  });
+}
+function updateCRKPIs(){
+  const data=filtrarCR();
+  const pend=data.filter(c=>statusCR(c)!=='pago');
+  const venc=pend.filter(c=>c.venc<=today());
+  const pagoMes=data.filter(c=>c.status==='pago'&&c.recebido_em&&c.recebido_em.slice(0,7)===today().slice(0,7));
+  setEl('cr-total',fmt(pend.reduce((a,c)=>a+c.val,0)));
+  setEl('cr-venc',fmt(venc.reduce((a,c)=>a+c.val,0)));
+  setEl('cr-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));
+  setEl('d-areceber',fmt(CR.filter(c=>statusCR(c)!=='pago').reduce((a,c)=>a+c.val,0)));
+}
 function editarCR(id){
   const c=CR.find(x=>x.id===id);if(!c)return;
   const tr=document.getElementById('cr-row-'+id);
@@ -1254,7 +1320,7 @@ function editarCR(id){
 function salvarCR(id){const c=CR.find(x=>x.id===id);if(!c)return;c.desc=document.getElementById('edr-desc-'+id).value.trim()||c.desc;c.nf=document.getElementById('edr-nf-'+id).value.trim();c.cliente=document.getElementById('edr-cli-'+id).value.trim();c.venc=document.getElementById('edr-venc-'+id).value||c.venc;c.val=parseFloat(document.getElementById('edr-val-'+id).value)||c.val;saveCR();renderCRTable();updateCRKPIs();}
 function renderCRTable(){
   const el=document.getElementById('crTable');
-  let data=CR;const f=filterCRAtual;
+  let data=filtrarCR();const f=filterCRAtual;
   if(f==='pendente')data=data.filter(c=>statusCR(c)==='pendente');
   else if(f==='vencido')data=data.filter(c=>statusCR(c)==='vencido');
   else if(f==='pago')data=data.filter(c=>c.status==='pago');
@@ -1326,12 +1392,35 @@ function calcSaldos(){
   TF.forEach(t=>{saldos[t.de]-=t.val;saldos[t.para]+=t.val;});
   return saldos;
 }
+function getDashFiltro(){
+  const anoEl=document.getElementById('dash-ano');
+  const mesEl=document.getElementById('dash-mes');
+  const ano=anoEl?anoEl.value:'todos';
+  const mes=mesEl?mesEl.value:'todos';
+  return{ano,mes};
+}
+function filtrarFCDash(){
+  const{ano,mes}=getDashFiltro();
+  return FC.filter(l=>{
+    if(ano!=='todos'&&!l.data.startsWith(ano))return false;
+    if(mes!=='todos'&&l.data.slice(5,7)!==String(mes).padStart(2,'0'))return false;
+    return true;
+  });
+}
 function updateAll(){
   const saldos=calcSaldos();
   const total=saldos.itau+saldos.bradesco+saldos.caixa;
-  const ent=FC.filter(l=>l.tipo==='e').reduce((s,l)=>s+l.val,0);
-  const sai=FC.filter(l=>l.tipo==='s').reduce((s,l)=>s+l.val,0);
+  // Usa filtro do dashboard para entradas/saídas/resultado
+  const fcFiltrado=filtrarFCDash();
+  const ent=fcFiltrado.filter(l=>l.tipo==='e').reduce((s,l)=>s+l.val,0);
+  const sai=fcFiltrado.filter(l=>l.tipo==='s').reduce((s,l)=>s+l.val,0);
   const res=ent-sai;
+  // Atualiza label do período
+  const{ano,mes}=getDashFiltro();
+  const MESES_N=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const periodoLabel=mes==='todos'?(ano==='todos'?'Todo o período':ano):(MESES_N[parseInt(mes)-1]+' '+ano);
+  const periodoEl=document.getElementById('dash-periodo');
+  if(periodoEl)periodoEl.textContent=periodoLabel;
   ['itau','bradesco','caixa'].forEach(c=>{const el=document.getElementById('sb-'+c);el.textContent=fmt(saldos[c]);el.style.color=saldos[c]>=0?CONTA_COLORS[c]:'var(--red)';});
   ['itau','bradesco','caixa'].forEach(c=>{const el=document.getElementById('d-'+c);el.textContent=fmt(saldos[c]);el.className='conta-saldo'+(saldos[c]<0?' neg':'');});
   setEl('d-total',fmt(total),total>=0?'kpi-value green':'kpi-value red');
@@ -1341,8 +1430,8 @@ function updateAll(){
   setEl('d-recorr',fmt(recorrMes));
   updateCPKPIs();updateCRKPIs();
   if(CHEQ.length)setEl('d-cheques',fmt(CHEQ.filter(c=>c.status==='pendente').reduce((a,c)=>a+c.val,0)));
-  updateDREKPIs();updateCharts(saldos,ent,sai);
-  renderRecentTable();renderFullTable();checkAlerts(total,ent,sai);
+  updateDREKPIs();updateCharts(saldos,ent,sai,fcFiltrado);
+  renderRecentTable(fcFiltrado);renderFullTable();checkAlerts(total,ent,sai);
 }
 
 function updateDREKPIs(){
@@ -1358,24 +1447,28 @@ function updateDREKPIs(){
   setEl('d-lucro',fmt(resultado),resultado>=0?'kpi-value purple':'kpi-value red');const lEl=document.getElementById('d-lucro-pct');if(lEl)lEl.textContent=fmtPct(margem);
 }
 
-function updateCharts(saldos,ent,sai){
+function updateCharts(saldos,ent,sai,fcFilt){
+  const fc=fcFilt||FC;
   if(chContas)chContas.destroy();
   const c1=document.getElementById('cContas').getContext('2d');
   const sv=[saldos.itau,saldos.bradesco,saldos.caixa];
   chContas=new Chart(c1,{type:'doughnut',data:{labels:['Itaú','Bradesco','Caixa físico'],datasets:[{data:sv.map(v=>Math.max(0,v)),backgroundColor:['rgba(236,112,0,0.7)','rgba(204,9,47,0.7)','rgba(45,138,78,0.7)'],borderWidth:0,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right',labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}}}});
-  const byDay={};FC.forEach(l=>{if(!byDay[l.data])byDay[l.data]={e:0,s:0};if(l.tipo==='e')byDay[l.data].e+=l.val;else byDay[l.data].s+=l.val;});
-  const days=Object.keys(byDay).sort().slice(-14);
+  const byDay={};fc.forEach(l=>{if(!byDay[l.data])byDay[l.data]={e:0,s:0};if(l.tipo==='e')byDay[l.data].e+=l.val;else byDay[l.data].s+=l.val;});
+  const days=Object.keys(byDay).sort().slice(-30);
   if(chES)chES.destroy();
   const c2=document.getElementById('cES').getContext('2d');
-  chES=new Chart(c2,{type:'bar',data:{labels:days.map(fmtD),datasets:[{label:'Entradas',data:days.map(d=>byDay[d].e),backgroundColor:'rgba(0,229,160,0.7)',borderRadius:4,borderSkipped:false},{label:'Saídas',data:days.map(d=>byDay[d].s),backgroundColor:'rgba(255,79,107,0.7)',borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
+  chES=new Chart(c2,{type:'bar',data:{labels:days.map(fmtD),datasets:[{label:'Entradas',data:days.map(d=>byDay[d].e),backgroundColor:'rgba(0,229,160,0.7)',borderRadius:4,borderSkipped:false},{label:'Saídas',data:days.map(d=>byDay[d].s),backgroundColor:'rgba(255,79,107,0.7)',borderRadius:4,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#7a7f96',font:{size:11}}},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},scales:{x:{ticks:{color:'#7a7f96',font:{size:10},maxTicksLimit:15},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#7a7f96',font:{size:10},callback:v=>fmt(v)},grid:{color:'rgba(255,255,255,0.04)'}}}}});
 }
 
-function renderRecentTable(){
+function renderRecentTable(fcFilt){
+  const fc=fcFilt||FC;
   const el=document.getElementById('recentTable');
-  const r=[...FC].reverse().slice(0,8);
-  if(!r.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◈</div><div class="empty-text">Nenhum lançamento ainda.</div></div>';return;}
-  el.innerHTML=`<table><thead><tr><th>Data</th><th>Conta</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${r.map(l=>`<tr><td class="mono" style="color:var(--muted);font-size:11px;">${fmtD(l.data)}</td><td>${contaPill(l.conta)}</td><td><span class="badge badge-${l.tipo}">${l.tipo==='e'?'▲ Ent':'▼ Saí'}</span></td><td style="color:var(--muted);font-size:12px;">${l.cat}</td><td>${l.descricao}</td><td class="val-${l.tipo==='e'?'pos':'neg'}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td></tr>`).join('')}</tbody></table>`;
+  const r=[...fc].reverse().slice(0,10);
+  if(!r.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◈</div><div class="empty-text">Nenhum lançamento no período.</div></div>';return;}
+  el.innerHTML=`<table><thead><tr><th>Data</th><th>Conta</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${r.map(l=>`<tr><td class="mono" style="color:var(--muted);font-size:11px;">${fmtD(l.data)}</td><td>${contaPill(l.conta)}</td><td><span class="badge badge-${l.tipo}">${l.tipo==='e'?'▲ Ent':'▼ Saí'}</span></td><td style="color:var(--muted);font-size:12px;">${l.cat}</td><td>${l.descricao}</td><td class="val-${l.tipo==='e'?'pos':'neg'}">${l.tipo==='e'?'+':'-'}${fmtDec(l.val)}</td></tr>`).join('')}</tbody></table>`;
 }
+}
+
 
 function renderFullTable(){
   const el=document.getElementById('fullTable');
