@@ -865,6 +865,11 @@ async function loadAll(){
   CHEQ=r8.data?JSON.parse(r8.data.dados):[];
   const r9=await SB.from('cf3_config').select('*').eq('chave','categorias').single();
   if(r9.data){const cats=JSON.parse(r9.data.dados);if(cats.e&&cats.e.length)CATS_E=cats.e;if(cats.s&&cats.s.length)CATS_S=cats.s;}
+  // Atualiza todos os selects com as categorias carregadas
+  setTipo(tipoAtual);setTipoRec(tipoRec);
+  // Preenche selects de contas a pagar/receber
+  ['cpCat'].forEach(id=>{const sel=document.getElementById(id);if(sel){sel.innerHTML='';CATS_S.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});};});
+  ['rCat'].forEach(id=>{const sel=document.getElementById(id);if(sel){sel.innerHTML='';[...CATS_S].forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;sel.appendChild(o);});};});
 }
 
 async function saveSI(){
@@ -928,6 +933,8 @@ function go(id,el){
   if(id==='produtos')renderProdutos();
   if(id==='transferencia')renderTransfTable();
   if(id==='categorias')renderCats();
+  if(id==='lancamento'){setTipo(tipoAtual);setConta(contaAtual);}
+  if(id==='recorrentes'){setTipoRec(tipoRec);setContaRec(contaRec);}
   if(id==='recorrentes')renderRecorrTable();
   if(id==='contaspagar'){renderCPTable();updateCPKPIs();}
   if(id==='contasreceber'){renderCRTable();updateCRKPIs();}
@@ -1762,6 +1769,9 @@ function checarNovaCat(i,sel){
 }
 async function importarSelecionados(lancs){
   const checks=document.querySelectorAll('.chk-imp:checked');
+  if(!checks.length){alert('Nenhum lançamento selecionado.');return;}
+  // Desabilita botões para evitar duplo clique
+  document.querySelectorAll('[onclick*="importarSelecionados"]').forEach(b=>{b.disabled=true;b.textContent='⏳ Importando...';});
   let count=0;
   for(const chk of checks){
     const i=parseInt(chk.dataset.i);const l=lancs[i];
@@ -1772,9 +1782,11 @@ async function importarSelecionados(lancs){
     if(!error){FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});count++;}
   }
   FC.sort((a,b)=>a.data.localeCompare(b.data));
-  alert(`${count} lançamento(s) importado(s) com sucesso!`);
-  updateAll();document.getElementById('pdfPreview').innerHTML='';
+  updateAll();
+  document.getElementById('pdfPreview').innerHTML='';
   document.getElementById('pdfResult').innerHTML=`<div class="pdf-result" style="color:var(--green)">✓ ${count} lançamento(s) importado(s) com sucesso!</div>`;
+  // Limpa o input para não reimportar acidentalmente
+  document.getElementById('pdfInput').value='';
 }
 
 // ══ EXPORTAR ══
