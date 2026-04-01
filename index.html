@@ -496,24 +496,14 @@ tr:hover td{background:var(--surface2);}
     <div class="kpi-card green"><div class="kpi-label">Pago no mês</div><div class="kpi-value green" id="cp-pago">R$ 0</div></div>
   </div>
 
-  <!-- LEITOR NF/FOTO -->
-  <div class="card" style="margin-bottom:18px;">
-    <div class="card-header"><div class="card-title">📷 Ler NF ou boleto (PDF ou foto)</div></div>
-    <div class="card-body">
-      <div class="pdf-drop" id="nfPayDrop" onclick="document.getElementById('nfPayInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleNFDrop(event,'pagar')">
-        <input type="file" id="nfPayInput" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="handleNFFile(this.files[0],'pagar')">
-        <div class="pdf-drop-icon">📄</div>
-        <div class="pdf-drop-text">Arraste a NF, boleto ou foto aqui<br><small>PDF, JPG, PNG — o sistema lê e preenche os campos automaticamente</small></div>
-      </div>
-      <div id="nfPayStatus"></div>
-    </div>
-  </div>
+  <!-- LEITOR NF/FOTO removido -->
 
   <div class="card">
     <div class="card-header"><div class="card-title">Nova conta a pagar</div></div>
     <div class="card-body">
-      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr auto;">
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;">
         <div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-input" id="cpDesc" placeholder="Ex: Fornecedor Borracha"></div>
+        <div class="form-group"><label class="form-label">NF / Vale / Doc</label><input type="text" class="form-input" id="cpNF" placeholder="Ex: NF-1234"></div>
         <div class="form-group"><label class="form-label">Valor total (R$)</label><input type="number" class="form-input" id="cpVal" placeholder="0,00" oninput="calcParcelaCp()"></div>
         <div class="form-group"><label class="form-label">1ª vencimento</label><input type="date" class="form-input" id="cpVenc" onchange="gerarCamposParcelas()"></div>
         <div class="form-group"><label class="form-label">Categoria</label><select class="form-select" id="cpCat"></select></div>
@@ -560,18 +550,7 @@ tr:hover td{background:var(--surface2);}
     <div class="kpi-card blue"><div class="kpi-label">Recebido no mês</div><div class="kpi-value blue" id="cr-pago">R$ 0</div></div>
   </div>
 
-  <!-- LEITOR NF/FOTO -->
-  <div class="card" style="margin-bottom:18px;">
-    <div class="card-header"><div class="card-title">📷 Ler NF ou comprovante (PDF ou foto)</div></div>
-    <div class="card-body">
-      <div class="pdf-drop" id="nfRecDrop" onclick="document.getElementById('nfRecInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleNFDrop(event,'receber')">
-        <input type="file" id="nfRecInput" accept=".pdf,.png,.jpg,.jpeg,.webp" style="display:none" onchange="handleNFFile(this.files[0],'receber')">
-        <div class="pdf-drop-icon">📄</div>
-        <div class="pdf-drop-text">Arraste a NF, comprovante ou foto aqui<br><small>PDF, JPG, PNG — o sistema lê e preenche os campos automaticamente</small></div>
-      </div>
-      <div id="nfRecStatus"></div>
-    </div>
-  </div>
+  <!-- LEITOR NF/FOTO removido -->
 
   <div class="card">
     <div class="card-header"><div class="card-title">Nova conta a receber</div></div>
@@ -1087,6 +1066,7 @@ function gerarCamposParcelas(){
 }
 function addCP(){
   const desc=document.getElementById('cpDesc').value.trim();
+  const nf=document.getElementById('cpNF').value.trim();
   const valTotal=parseFloat(document.getElementById('cpVal').value);
   const venc=document.getElementById('cpVenc').value;
   const cat=document.getElementById('cpCat').value;
@@ -1100,13 +1080,13 @@ function addCP(){
       const val=parseFloat(document.getElementById('cpValParc-'+i)?.value)||0;
       if(!dataVenc){alert(`Preencha a data da parcela ${i+1}.`);return;}
       const descParcela=`${desc} (${i+1}/${nParcelas})`;
-      CP.push({id:Date.now()+i,desc:descParcela,val,venc:dataVenc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
+      CP.push({id:Date.now()+i,desc:descParcela,nf,val,venc:dataVenc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
     }
   } else {
-    CP.push({id:Date.now(),desc,val:valTotal,venc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
+    CP.push({id:Date.now(),desc,nf,val:valTotal,venc,cat:cat||'Outras saídas',status:'pendente',pago_em:null});
   }
   saveCP();renderCPTable();updateCPKPIs();updateAll();
-  document.getElementById('cpDesc').value='';document.getElementById('cpVal').value='';
+  document.getElementById('cpDesc').value='';document.getElementById('cpNF').value='';document.getElementById('cpVal').value='';
   document.getElementById('cpParcelado').checked=false;
   toggleParcelamento(false);
 }
@@ -1139,11 +1119,12 @@ function renderCPTable(){
   else if(f==='pago')data=data.filter(c=>c.status==='pago');
   data=[...data].sort((a,b)=>a.venc.localeCompare(b.venc));
   if(!data.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">↓</div><div class="empty-text">Nenhuma conta.</div></div>';return;}
-  el.innerHTML=`<table><thead><tr><th>Descrição</th><th>Categoria</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
+  el.innerHTML=`<table><thead><tr><th>Descrição</th><th>NF / Doc</th><th>Categoria</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
     const st=statusCP(c);
     const stBadge=st==='pago'?'<span class="badge badge-pago">✓ Pago</span>':st==='vencido'?'<span class="badge badge-venc">⚠ Vencido</span>':'<span class="badge badge-pend">Pendente</span>';
     return`<tr>
       <td>${c.desc}</td>
+      <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${c.nf||'—'}</td>
       <td style="color:var(--muted);font-size:12px">${c.cat}</td>
       <td class="mono" style="font-size:12px;color:${st==='vencido'?'var(--red)':'var(--muted)'}">${fmtDFull(c.venc)}</td>
       <td>${stBadge}</td>
