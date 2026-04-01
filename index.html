@@ -907,6 +907,7 @@ async function init(){
 
 // ══ FORMATO ══
 function fmt(v){const n=Math.round(v||0);return n<0?'(R$ '+Math.abs(n).toLocaleString('pt-BR')+')':'R$ '+n.toLocaleString('pt-BR');}
+function fmtDec(v){const n=Number(v||0);return'R$ '+Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtPct(v){return isFinite(v)?(v*100).toFixed(1)+'%':'—';}
 function fmtD(d){if(!d)return'—';const[y,m,dd]=d.split('-');return`${dd}/${m}`;}
 function fmtDFull(d){if(!d)return'—';const[y,m,dd]=d.split('-');return`${dd}/${m}/${y}`;}
@@ -1680,8 +1681,8 @@ function parsearExtrato(texto,result,preview){
   const saidas=filtrados.filter(l=>l.tipo==='s');
   result.innerHTML=`<div class="pdf-result" style="color:var(--green)">
     ✓ <strong>${filtrados.length} lançamento(s) identificado(s)</strong> —
-    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmt(entradas.reduce((a,l)=>a+l.val,0))})</span> ·
-    <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmt(saidas.reduce((a,l)=>a+l.val,0))})</span><br>
+    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmtDec(entradas.reduce((a,l)=>a+l.val,0))})</span> ·
+    <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmtDec(saidas.reduce((a,l)=>a+l.val,0))})</span><br>
     <small style="color:var(--muted)">Aplicações automáticas do banco foram filtradas. Revise o tipo e categoria antes de importar.</small>
   </div>`;
 
@@ -1714,7 +1715,7 @@ function parsearExtrato(texto,result,preview){
         <option value="__nova__">+ Nova categoria...</option>
       </select>
     </td>
-    <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td>
+    <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmtDec(l.val)}</td>
     <td><select class="form-select" style="padding:3px 6px;font-size:11px;width:90px;" id="imp-conta-${i}">
       <option value="itau">Itaú</option>
       <option value="bradesco">Bradesco</option>
@@ -1732,7 +1733,7 @@ function atualizarLinhaPdf(i,tipo){
   const valEl=document.getElementById('imp-val-'+i);
   const sel=document.getElementById('imp-tipo-'+i);
   valEl.className=tipo==='e'?'val-pos':'val-neg';
-  valEl.textContent=(tipo==='e'?'+':'-')+fmt(window._pdfLancs[i].val);
+  valEl.textContent=(tipo==='e'?'+':'-')+fmtDec(window._pdfLancs[i].val);
   sel.style.background=tipo==='e'?'var(--green-dim)':'var(--red-dim)';
   sel.style.color=tipo==='e'?'var(--green)':'var(--red)';
   // Atualiza opções de categoria conforme tipo
