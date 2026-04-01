@@ -351,7 +351,10 @@ tr:hover td{background:var(--surface2);}
       <select class="form-input" id="dash-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="updateAll()"></select>
       <select class="form-input" id="dash-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="updateAll()">
         <option value="todos">Todos os meses</option>
-        ${[...Array(12)].map((_,i)=>`<option value="${i+1}">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][i]}</option>`).join('')}
+        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="exportarPDF()">↓ PDF</button>
       <button class="btn btn-outline btn-sm" onclick="exportarExcel()">↓ Excel</button>
@@ -500,7 +503,10 @@ tr:hover td{background:var(--surface2);}
       <select class="form-input" id="cp-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="renderCPTable();updateCPKPIs()"></select>
       <select class="form-input" id="cp-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="renderCPTable();updateCPKPIs()">
         <option value="todos">Todos os meses</option>
-        ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
+        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
       </select>
     </div>
   </div>
@@ -563,7 +569,10 @@ tr:hover td{background:var(--surface2);}
       <select class="form-input" id="cr-ano" style="width:100px;padding:6px 10px;font-size:12px;" onchange="renderCRTable();updateCRKPIs()"></select>
       <select class="form-input" id="cr-mes" style="width:130px;padding:6px 10px;font-size:12px;" onchange="renderCRTable();updateCRKPIs()">
         <option value="todos">Todos os meses</option>
-        ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}
+        <option value="01">Janeiro</option><option value="02">Fevereiro</option><option value="03">Março</option>
+        <option value="04">Abril</option><option value="05">Maio</option><option value="06">Junho</option>
+        <option value="07">Julho</option><option value="08">Agosto</option><option value="09">Setembro</option>
+        <option value="10">Outubro</option><option value="11">Novembro</option><option value="12">Dezembro</option>
       </select>
     </div>
   </div>
@@ -1467,8 +1476,6 @@ function renderRecentTable(fcFilt){
   if(!r.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◈</div><div class="empty-text">Nenhum lançamento no período.</div></div>';return;}
   el.innerHTML=`<table><thead><tr><th>Data</th><th>Conta</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody>${r.map(l=>`<tr><td class="mono" style="color:var(--muted);font-size:11px;">${fmtD(l.data)}</td><td>${contaPill(l.conta)}</td><td><span class="badge badge-${l.tipo}">${l.tipo==='e'?'▲ Ent':'▼ Saí'}</span></td><td style="color:var(--muted);font-size:12px;">${l.cat}</td><td>${l.descricao}</td><td class="val-${l.tipo==='e'?'pos':'neg'}">${l.tipo==='e'?'+':'-'}${fmtDec(l.val)}</td></tr>`).join('')}</tbody></table>`;
 }
-}
-
 
 function renderFullTable(){
   const el=document.getElementById('fullTable');
