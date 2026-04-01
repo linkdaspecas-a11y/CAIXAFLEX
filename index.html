@@ -555,12 +555,29 @@ tr:hover td{background:var(--surface2);}
   <div class="card">
     <div class="card-header"><div class="card-title">Nova conta a receber</div></div>
     <div class="card-body">
-      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr auto;">
-        <div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-input" id="crDesc" placeholder="Ex: Cliente GM — NF 123"></div>
-        <div class="form-group"><label class="form-label">Valor (R$)</label><input type="number" class="form-input" id="crVal" placeholder="0,00"></div>
-        <div class="form-group"><label class="form-label">Vencimento</label><input type="date" class="form-input" id="crVenc"></div>
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;">
+        <div class="form-group"><label class="form-label">Descrição</label><input type="text" class="form-input" id="crDesc" placeholder="Ex: Cliente GM"></div>
+        <div class="form-group"><label class="form-label">NF / Vale / Doc</label><input type="text" class="form-input" id="crNF" placeholder="Ex: NF-1234"></div>
         <div class="form-group"><label class="form-label">Cliente</label><input type="text" class="form-input" id="crCliente" placeholder="Nome do cliente"></div>
+        <div class="form-group"><label class="form-label">Valor total (R$)</label><input type="number" class="form-input" id="crVal" placeholder="0,00" oninput="calcParcelaCr()"></div>
+        <div class="form-group"><label class="form-label">1º vencimento</label><input type="date" class="form-input" id="crVenc" onchange="gerarCamposParcelasCr()"></div>
         <button class="btn btn-green" onclick="addCR()">+ Adicionar</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:12px;padding:12px 14px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border);">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="crParcelado" onchange="toggleParcelamentoCr(this.checked)" style="accent-color:var(--green);">
+          Parcelado
+        </label>
+        <div id="crParcelaCampos" style="display:none;flex-direction:column;gap:10px;width:100%;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Nº de parcelas</label>
+              <input type="number" class="form-input" id="crParcelas" value="2" min="2" max="60" style="width:80px;" oninput="calcParcelaCr()">
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:16px" id="crParcelaInfo"></div>
+          </div>
+          <div id="crParcelasGrid" style="background:var(--surface);border-radius:var(--radius-sm);padding:0 12px;border:1px solid var(--border);"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1182,16 +1199,34 @@ function renderCPTable(){
     </tr>`;}).join('')}</tbody></table>`;
 }
 
+
 // ══ CONTAS A RECEBER ══
+function toggleParcelamentoCr(on){document.getElementById('crParcelaCampos').style.display=on?'flex':'none';if(on)gerarCamposParcelasCr();}
+function calcParcelaCr(){const val=parseFloat(document.getElementById('crVal').value)||0;const n=parseInt(document.getElementById('crParcelas').value)||1;const info=document.getElementById('crParcelaInfo');if(info)info.textContent=`Cada parcela: ${fmtDec(val/n)}`;gerarCamposParcelasCr();}
+function gerarCamposParcelasCr(){const val=parseFloat(document.getElementById('crVal').value)||0;const n=parseInt(document.getElementById('crParcelas').value)||1;const vencBase=document.getElementById('crVenc').value;const valParcela=parseFloat((val/n).toFixed(2));const container=document.getElementById('crParcelasGrid');if(!container)return;container.innerHTML=Array.from({length:n},(_,i)=>{let dataSug='';if(vencBase){const d=new Date(vencBase+'T12:00:00');d.setMonth(d.getMonth()+i);dataSug=d.toISOString().split('T')[0];}const valThis=i===n-1?parseFloat((val-(valParcela*(n-1))).toFixed(2)):valParcela;return`<div style="display:grid;grid-template-columns:80px 150px 130px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);"><span style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace">Parcela ${i+1}/${n}</span><input type="date" class="form-input" id="crDataParc-${i}" value="${dataSug}" style="padding:6px 10px;font-size:12px;"><input type="number" class="form-input" id="crValParc-${i}" value="${valThis}" style="padding:6px 10px;font-size:12px;font-family:'DM Mono',monospace;"></div>`;}).join('');}
 function addCR(){
   const desc=document.getElementById('crDesc').value.trim();
-  const val=parseFloat(document.getElementById('crVal').value);
-  const venc=document.getElementById('crVenc').value;
+  const nf=document.getElementById('crNF').value.trim();
   const cliente=document.getElementById('crCliente').value.trim();
-  if(!desc||!val||!venc){alert('Preencha todos os campos.');return;}
-  CR.push({id:Date.now(),desc,val,venc,cliente,status:'pendente',recebido_em:null});
+  const valTotal=parseFloat(document.getElementById('crVal').value);
+  const venc=document.getElementById('crVenc').value;
+  const parcelado=document.getElementById('crParcelado').checked;
+  const nParcelas=parcelado?parseInt(document.getElementById('crParcelas').value)||1:1;
+  if(!desc||!valTotal){alert('Preencha descrição e valor.');return;}
+  if(!parcelado&&!venc){alert('Preencha o vencimento.');return;}
+  if(parcelado){
+    for(let i=0;i<nParcelas;i++){
+      const dataVenc=document.getElementById('crDataParc-'+i)?.value;
+      const val=parseFloat(document.getElementById('crValParc-'+i)?.value)||0;
+      if(!dataVenc){alert(`Preencha a data da parcela ${i+1}.`);return;}
+      CR.push({id:Date.now()+i,desc:`${desc} (${i+1}/${nParcelas})`,nf,cliente,val,venc:dataVenc,status:'pendente',recebido_em:null});
+    }
+  } else {
+    CR.push({id:Date.now(),desc,nf,cliente,val:valTotal,venc,status:'pendente',recebido_em:null});
+  }
   saveCR();renderCRTable();updateCRKPIs();updateAll();
-  document.getElementById('crDesc').value='';document.getElementById('crVal').value='';document.getElementById('crCliente').value='';
+  document.getElementById('crDesc').value='';document.getElementById('crNF').value='';document.getElementById('crVal').value='';document.getElementById('crCliente').value='';
+  document.getElementById('crParcelado').checked=false;toggleParcelamentoCr(false);
 }
 async function receberCR(id){
   const cr=CR.find(c=>c.id===id);if(!cr)return;
@@ -1199,56 +1234,24 @@ async function receberCR(id){
   const contaMap={'1':'itau','2':'bradesco','3':'caixa'};
   const contaSel=contaMap[conta?.trim()];
   if(!contaSel){alert('Cancelado ou conta inválida.');return;}
-  const{data:row,error}=await SB.from('cf3_lancamentos').insert({
-    data:today(),
-    tipo:'e',
-    conta:contaSel,
-    cat:'Outras entradas',
-    descricao:`Recebto: ${cr.desc}${cr.cliente?' - '+cr.cliente:''}`,
-    val:cr.val,
-    ref:'Conta a receber'
-  }).select().single();
+  const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:today(),tipo:'e',conta:contaSel,cat:'Outras entradas',descricao:`Recebto: ${cr.desc}${cr.cliente?' - '+cr.cliente:''}${cr.nf?' ('+cr.nf+')':''}`,val:cr.val,ref:'Conta a receber'}).select().single();
   if(error){alert('Erro ao lançar: '+error.message);return;}
   FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
   FC.sort((a,b)=>a.data.localeCompare(b.data));
-  cr.status='pago';cr.recebido_em=today();cr.conta_recebido=contaSel;
+  cr.status='pago';cr.recebido_em=today();
   saveCR();renderCRTable();updateCRKPIs();updateAll();
   alert(`✓ Recebido! Creditado em ${CONTA_LABELS[contaSel]}: ${fmtDec(cr.val)}`);
 }
-function delCR(id){CR=CR.filter(c=>c.id!==id);saveCR();renderCRTable();updateCRKPIs();updateAll();}
+function delCR(id){if(!confirm('Excluir?'))return;CR=CR.filter(c=>c.id!==id);saveCR();renderCRTable();updateCRKPIs();updateAll();}
 function filterCR(f,el){filterCRAtual=f;document.querySelectorAll('#view-contasreceber .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCRTable();}
 function statusCR(c){if(c.status==='pago')return'pago';if(c.venc<today())return'vencido';return'pendente';}
-function updateCRKPIs(){
-  const pend=CR.filter(c=>statusCR(c)!=='pago');
-  const venc=pend.filter(c=>c.venc<=today());
-  const pagoMes=CR.filter(c=>c.status==='pago'&&c.recebido_em&&c.recebido_em.slice(0,7)===today().slice(0,7));
-  setEl('cr-total',fmt(pend.reduce((a,c)=>a+c.val,0)));
-  setEl('cr-venc',fmt(venc.reduce((a,c)=>a+c.val,0)));
-  setEl('cr-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));
-  setEl('d-areceber',fmt(pend.reduce((a,c)=>a+c.val,0)));
-}
+function updateCRKPIs(){const pend=CR.filter(c=>statusCR(c)!=='pago');const venc=pend.filter(c=>c.venc<=today());const pagoMes=CR.filter(c=>c.status==='pago'&&c.recebido_em&&c.recebido_em.slice(0,7)===today().slice(0,7));setEl('cr-total',fmt(pend.reduce((a,c)=>a+c.val,0)));setEl('cr-venc',fmt(venc.reduce((a,c)=>a+c.val,0)));setEl('cr-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));setEl('d-areceber',fmt(pend.reduce((a,c)=>a+c.val,0)));}
 function editarCR(id){
   const c=CR.find(x=>x.id===id);if(!c)return;
   const tr=document.getElementById('cr-row-'+id);
-  tr.innerHTML=`
-    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-desc-${id}" value="${c.desc}"></td>
-    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-cli-${id}" value="${c.cliente||''}"></td>
-    <td><input type="date" class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-venc-${id}" value="${c.venc}"></td>
-    <td><span class="badge ${c.status==='pago'?'badge-pago':'badge-pend'}">${c.status==='pago'?'✓ Recebido':'Pendente'}</span></td>
-    <td><input type="number" class="form-input" style="padding:5px 8px;font-size:12px;width:110px;" id="edr-val-${id}" value="${c.val}"></td>
-    <td style="display:flex;gap:4px;">
-      <button class="btn btn-sm btn-green" onclick="salvarCR(${id})">✓ Salvar</button>
-      <button class="btn btn-sm btn-outline" onclick="renderCRTable()">✕</button>
-    </td>`;
+  tr.innerHTML=`<td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-desc-${id}" value="${c.desc}"></td><td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-nf-${id}" value="${c.nf||''}"></td><td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-cli-${id}" value="${c.cliente||''}"></td><td><input type="date" class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-venc-${id}" value="${c.venc}"></td><td><span class="badge ${c.status==='pago'?'badge-pago':'badge-pend'}">${c.status==='pago'?'✓ Recebido':'Pendente'}</span></td><td><input type="number" class="form-input" style="padding:5px 8px;font-size:12px;width:110px;" id="edr-val-${id}" value="${c.val}"></td><td style="display:flex;gap:4px;"><button class="btn btn-sm btn-green" onclick="salvarCR(${id})">✓ Salvar</button><button class="btn btn-sm btn-outline" onclick="renderCRTable()">✕</button></td>`;
 }
-function salvarCR(id){
-  const c=CR.find(x=>x.id===id);if(!c)return;
-  c.desc=document.getElementById('edr-desc-'+id).value.trim()||c.desc;
-  c.cliente=document.getElementById('edr-cli-'+id).value.trim();
-  c.venc=document.getElementById('edr-venc-'+id).value||c.venc;
-  c.val=parseFloat(document.getElementById('edr-val-'+id).value)||c.val;
-  saveCR();renderCRTable();updateCRKPIs();
-}
+function salvarCR(id){const c=CR.find(x=>x.id===id);if(!c)return;c.desc=document.getElementById('edr-desc-'+id).value.trim()||c.desc;c.nf=document.getElementById('edr-nf-'+id).value.trim();c.cliente=document.getElementById('edr-cli-'+id).value.trim();c.venc=document.getElementById('edr-venc-'+id).value||c.venc;c.val=parseFloat(document.getElementById('edr-val-'+id).value)||c.val;saveCR();renderCRTable();updateCRKPIs();}
 function renderCRTable(){
   const el=document.getElementById('crTable');
   let data=CR;const f=filterCRAtual;
@@ -1257,18 +1260,19 @@ function renderCRTable(){
   else if(f==='pago')data=data.filter(c=>c.status==='pago');
   data=[...data].sort((a,b)=>a.venc.localeCompare(b.venc));
   if(!data.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">↑</div><div class="empty-text">Nenhuma conta.</div></div>';return;}
-  el.innerHTML=`<table><thead><tr><th>Descrição</th><th>Cliente</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
+  el.innerHTML=`<table><thead><tr><th>Descrição</th><th>NF / Doc</th><th>Cliente</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
     const st=statusCR(c);
     const stBadge=st==='pago'?'<span class="badge badge-pago">✓ Recebido</span>':st==='vencido'?'<span class="badge badge-venc">⚠ Atrasado</span>':'<span class="badge badge-pend">Pendente</span>';
     return`<tr id="cr-row-${c.id}">
       <td>${c.desc}</td>
+      <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${c.nf||'—'}</td>
       <td style="color:var(--muted);font-size:12px">${c.cliente||'—'}</td>
       <td class="mono" style="font-size:12px;color:${st==='vencido'?'var(--red)':'var(--muted)'}">${fmtDFull(c.venc)}</td>
       <td>${stBadge}</td>
       <td class="val-pos">+${fmtDec(c.val)}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap;">
         ${st!=='pago'?`<button class="btn btn-sm btn-green" onclick="receberCR(${c.id})">✓ Receber</button>`:''}
-        <button class="btn btn-sm btn-blue" style="background:var(--blue);color:#000;" onclick="editarCR(${c.id})">✎ Editar</button>
+        <button class="btn btn-sm btn-outline" onclick="editarCR(${c.id})">✎</button>
         <button class="btn btn-sm btn-danger" onclick="delCR(${c.id})">✕</button>
       </td>
     </tr>`;}).join('')}</tbody></table>`;
