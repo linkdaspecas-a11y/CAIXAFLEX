@@ -271,6 +271,47 @@ tr:hover td{background:var(--surface2);}
 
 /* STATUS PILL */
 .status-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600;cursor:pointer;}
+
+/* ══ MOBILE NAV ══ */
+#mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);z-index:200;height:60px;justify-content:space-around;align-items:center;padding:0 4px;}
+.mob-btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:9px;font-weight:500;transition:all 0.15s;min-width:44px;text-align:center;}
+.mob-btn.active{color:var(--green);}
+.mob-icon{font-size:17px;}
+.mob-menu{display:none;position:absolute;bottom:68px;right:8px;background:var(--surface);border:1px solid var(--border2);border-radius:12px;padding:8px;min-width:190px;box-shadow:0 -4px 24px rgba(0,0,0,0.5);}
+.mob-menu.open{display:block;}
+.mob-menu-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;transition:all 0.15s;}
+.mob-menu-item:hover,.mob-menu-item.active{background:var(--surface2);color:var(--text);}
+
+/* ══ RESPONSIVE MOBILE ══ */
+@media(max-width:768px){
+  .shell{grid-template-columns:1fr;grid-template-rows:56px 1fr;}
+  .topbar{padding:0 14px;}
+  .topbar-sub{display:none;}
+  .ver-badge{display:none;}
+  .sidebar{display:none;}
+  .main{padding:14px 12px;height:calc(100vh - 116px);overflow-y:auto;padding-bottom:20px;}
+  #mobile-nav{display:flex!important;}
+  .contas-grid{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+  .kpi-grid{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+  .kpi-grid-5{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+  .kpi-grid-3{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+  .kpi-value{font-size:16px!important;}
+  .charts-row{grid-template-columns:1fr!important;}
+  .config-row{grid-template-columns:1fr!important;}
+  .form-row,.form-row-6,.form-row-4,.form-row-3{grid-template-columns:1fr!important;}
+  .tipo-toggle{width:100%!important;}
+  .page-header{flex-direction:column;gap:10px;}
+  .page-header > div:last-child{width:100%;display:flex;gap:6px;flex-wrap:wrap;}
+  .card{overflow-x:auto;}
+  table{min-width:480px;font-size:12px;}
+  th,td{padding:7px 10px;}
+  .dre-row,.dre-input-row{grid-template-columns:1fr 110px 60px!important;}
+  .filter-tab{padding:4px 8px;font-size:10px;}
+  .chart-wrap,.chart-wrap-lg{height:180px;}
+  .btn{padding:8px 12px;font-size:12px;}
+  .btn-sm{padding:4px 8px;font-size:11px;}
+  #cpParcelasGrid > div,#crParcelasGrid > div{grid-template-columns:60px 1fr 1fr!important;}
+}
 </style>
 </head>
 <body>
@@ -824,6 +865,35 @@ tr:hover td{background:var(--surface2);}
 </main>
 </div>
 
+<!-- MOBILE BOTTOM NAV -->
+<div id="mobile-nav">
+  <div class="mob-btn active" id="mob-dashboard" onclick="mobGo('dashboard',this)">
+    <span class="mob-icon">◈</span>Dashboard
+  </div>
+  <div class="mob-btn" id="mob-lancamento" onclick="mobGo('lancamento',this)">
+    <span class="mob-icon">+</span>Lançamento
+  </div>
+  <div class="mob-btn" id="mob-contaspagar" onclick="mobGo('contaspagar',this)">
+    <span class="mob-icon">↓</span>A Pagar
+  </div>
+  <div class="mob-btn" id="mob-contasreceber" onclick="mobGo('contasreceber',this)">
+    <span class="mob-icon">↑</span>A Receber
+  </div>
+  <div class="mob-btn mob-more" id="mob-mais" onclick="toggleMobMenu()">
+    <span class="mob-icon">☰</span>Mais
+    <div class="mob-menu" id="mob-menu">
+      <div class="mob-menu-item" onclick="mobGo('extrato',null);toggleMobMenu()"><span class="mob-icon">≡</span>Extrato</div>
+      <div class="mob-menu-item" onclick="mobGo('recorrentes',null);toggleMobMenu()"><span class="mob-icon">↺</span>Recorrentes</div>
+      <div class="mob-menu-item" onclick="mobGo('cheques',null);toggleMobMenu()"><span class="mob-icon">◻</span>Cheques</div>
+      <div class="mob-menu-item" onclick="mobGo('transferencia',null);toggleMobMenu()"><span class="mob-icon">⇄</span>Transferência</div>
+      <div class="mob-menu-item" onclick="mobGo('projecao',null);toggleMobMenu()"><span class="mob-icon">⟶</span>Projeção</div>
+      <div class="mob-menu-item" onclick="mobGo('dre',null);toggleMobMenu()"><span class="mob-icon">▦</span>DRE</div>
+      <div class="mob-menu-item" onclick="mobGo('importarpdf',null);toggleMobMenu()"><span class="mob-icon">⬆</span>Importar PDF</div>
+      <div class="mob-menu-item" onclick="mobGo('categorias',null);toggleMobMenu()"><span class="mob-icon">⊞</span>Categorias</div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══ SUPABASE ══
 const {createClient}=supabase;
@@ -876,6 +946,17 @@ let chContas=null,chES=null,chProj=null,chEvo=null,chMarg=null,chProd=null;
 
 // ══ LOGIN ══
 const SENHA='20984533';
+
+// ══ MOBILE NAV ══
+function mobGo(id,el){
+  go(id, document.getElementById('n-'+id));
+  document.querySelectorAll('.mob-btn').forEach(b=>b.classList.remove('active'));
+  if(el)el.classList.add('active');
+  document.getElementById('mob-menu').classList.remove('open');
+}
+function toggleMobMenu(){
+  document.getElementById('mob-menu').classList.toggle('open');
+}
 function fazerLogin(){
   const s=document.getElementById('login-senha').value;
   if(s===SENHA){sessionStorage.setItem('cf4_auth','1');document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='grid';init();}
@@ -2191,3 +2272,4 @@ if(sessionStorage.getItem('cf4_auth')==='1'){init();}
 </script>
 </body>
 </html>
+                                                                    
