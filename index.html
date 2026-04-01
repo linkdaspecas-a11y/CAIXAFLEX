@@ -1090,10 +1090,30 @@ function addCP(){
   document.getElementById('cpParcelado').checked=false;
   toggleParcelamento(false);
 }
-function pagarCP(id){
+async function pagarCP(id){
   const cp=CP.find(c=>c.id===id);if(!cp)return;
-  cp.status='pago';cp.pago_em=today();
+  // Pergunta qual conta vai debitar
+  const conta=prompt(`Pagar "${cp.desc}" (${fmtDec(cp.val)})\n\nDigite a conta:\n1 = Itaú\n2 = Bradesco\n3 = Caixa físico`);
+  const contaMap={'1':'itau','2':'bradesco','3':'caixa'};
+  const contaSel=contaMap[conta?.trim()];
+  if(!contaSel){alert('Cancelado ou conta inválida.');return;}
+  // Cria lançamento de saída automaticamente
+  const{data:row,error}=await SB.from('cf3_lancamentos').insert({
+    data:today(),
+    tipo:'s',
+    conta:contaSel,
+    cat:cp.cat||'Outras saídas',
+    descricao:`Pgto: ${cp.desc}${cp.nf?' ('+cp.nf+')':''}`,
+    val:cp.val,
+    ref:'Conta a pagar'
+  }).select().single();
+  if(error){alert('Erro ao lançar: '+error.message);return;}
+  FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
+  FC.sort((a,b)=>a.data.localeCompare(b.data));
+  // Marca como pago
+  cp.status='pago';cp.pago_em=today();cp.conta_pago=contaSel;
   saveCP();renderCPTable();updateCPKPIs();updateAll();
+  alert(`✓ Pago! Debitado de ${CONTA_LABELS[contaSel]}: ${fmtDec(cp.val)}`);
 }
 function delCP(id){CP=CP.filter(c=>c.id!==id);saveCP();renderCPTable();updateCPKPIs();updateAll();}
 function filterCP(f,el){filterCPAtual=f;document.querySelectorAll('#view-contaspagar .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCPTable();}
@@ -1111,6 +1131,31 @@ function updateCPKPIs(){
   // fill cat select
   const sel=document.getElementById('cpCat');if(sel&&!sel.options.length)CATS_S.forEach(c=>{const o=document.createElement('option');o.textContent=c;sel.appendChild(o);});
 }
+function editarCP(id){
+  const c=CP.find(x=>x.id===id);if(!c)return;
+  const tr=document.getElementById('cp-row-'+id);
+  tr.innerHTML=`
+    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="ed-desc-${id}" value="${c.desc}"></td>
+    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="ed-nf-${id}" value="${c.nf||''}"></td>
+    <td><select class="form-select" style="padding:5px 8px;font-size:12px;" id="ed-cat-${id}">${CATS_S.map(x=>`<option value="${x}" ${x===c.cat?'selected':''}>${x}</option>`).join('')}</select></td>
+    <td><input type="date" class="form-input" style="padding:5px 8px;font-size:12px;" id="ed-venc-${id}" value="${c.venc}"></td>
+    <td><span class="badge ${c.status==='pago'?'badge-pago':'badge-pend'}">${c.status==='pago'?'✓ Pago':'Pendente'}</span></td>
+    <td><input type="number" class="form-input" style="padding:5px 8px;font-size:12px;width:110px;" id="ed-val-${id}" value="${c.val}"></td>
+    <td style="display:flex;gap:4px;">
+      <button class="btn btn-sm btn-green" onclick="salvarCP(${id})">✓ Salvar</button>
+      <button class="btn btn-sm btn-outline" onclick="renderCPTable()">✕</button>
+    </td>`;
+}
+function salvarCP(id){
+  const c=CP.find(x=>x.id===id);if(!c)return;
+  c.desc=document.getElementById('ed-desc-'+id).value.trim()||c.desc;
+  c.nf=document.getElementById('ed-nf-'+id).value.trim();
+  c.cat=document.getElementById('ed-cat-'+id).value;
+  c.venc=document.getElementById('ed-venc-'+id).value||c.venc;
+  c.val=parseFloat(document.getElementById('ed-val-'+id).value)||c.val;
+  saveCP();renderCPTable();updateCPKPIs();
+}
+
 function renderCPTable(){
   const el=document.getElementById('cpTable');
   let data=CP;const f=filterCPAtual;
@@ -1122,15 +1167,16 @@ function renderCPTable(){
   el.innerHTML=`<table><thead><tr><th>Descrição</th><th>NF / Doc</th><th>Categoria</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
     const st=statusCP(c);
     const stBadge=st==='pago'?'<span class="badge badge-pago">✓ Pago</span>':st==='vencido'?'<span class="badge badge-venc">⚠ Vencido</span>':'<span class="badge badge-pend">Pendente</span>';
-    return`<tr>
+    return`<tr id="cp-row-${c.id}">
       <td>${c.desc}</td>
       <td style="color:var(--muted);font-size:11px;font-family:'DM Mono',monospace">${c.nf||'—'}</td>
       <td style="color:var(--muted);font-size:12px">${c.cat}</td>
       <td class="mono" style="font-size:12px;color:${st==='vencido'?'var(--red)':'var(--muted)'}">${fmtDFull(c.venc)}</td>
       <td>${stBadge}</td>
-      <td class="val-neg">${fmt(c.val)}</td>
-      <td style="display:flex;gap:4px;">
+      <td class="val-neg">${fmtDec(c.val)}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap;">
         ${st!=='pago'?`<button class="btn btn-sm btn-green" onclick="pagarCP(${c.id})">✓ Pagar</button>`:''}
+        <button class="btn btn-sm btn-blue" style="background:var(--blue);color:#000;" onclick="editarCP(${c.id})">✎ Editar</button>
         <button class="btn btn-sm btn-danger" onclick="delCP(${c.id})">✕</button>
       </td>
     </tr>`;}).join('')}</tbody></table>`;
@@ -1147,7 +1193,28 @@ function addCR(){
   saveCR();renderCRTable();updateCRKPIs();updateAll();
   document.getElementById('crDesc').value='';document.getElementById('crVal').value='';document.getElementById('crCliente').value='';
 }
-function receberCR(id){const cr=CR.find(c=>c.id===id);if(!cr)return;cr.status='pago';cr.recebido_em=today();saveCR();renderCRTable();updateCRKPIs();updateAll();}
+async function receberCR(id){
+  const cr=CR.find(c=>c.id===id);if(!cr)return;
+  const conta=prompt(`Receber "${cr.desc}" (${fmtDec(cr.val)})\n\nQual conta vai receber?\n1 = Itaú\n2 = Bradesco\n3 = Caixa físico`);
+  const contaMap={'1':'itau','2':'bradesco','3':'caixa'};
+  const contaSel=contaMap[conta?.trim()];
+  if(!contaSel){alert('Cancelado ou conta inválida.');return;}
+  const{data:row,error}=await SB.from('cf3_lancamentos').insert({
+    data:today(),
+    tipo:'e',
+    conta:contaSel,
+    cat:'Outras entradas',
+    descricao:`Recebto: ${cr.desc}${cr.cliente?' - '+cr.cliente:''}`,
+    val:cr.val,
+    ref:'Conta a receber'
+  }).select().single();
+  if(error){alert('Erro ao lançar: '+error.message);return;}
+  FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
+  FC.sort((a,b)=>a.data.localeCompare(b.data));
+  cr.status='pago';cr.recebido_em=today();cr.conta_recebido=contaSel;
+  saveCR();renderCRTable();updateCRKPIs();updateAll();
+  alert(`✓ Recebido! Creditado em ${CONTA_LABELS[contaSel]}: ${fmtDec(cr.val)}`);
+}
 function delCR(id){CR=CR.filter(c=>c.id!==id);saveCR();renderCRTable();updateCRKPIs();updateAll();}
 function filterCR(f,el){filterCRAtual=f;document.querySelectorAll('#view-contasreceber .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCRTable();}
 function statusCR(c){if(c.status==='pago')return'pago';if(c.venc<today())return'vencido';return'pendente';}
@@ -1160,6 +1227,28 @@ function updateCRKPIs(){
   setEl('cr-pago',fmt(pagoMes.reduce((a,c)=>a+c.val,0)));
   setEl('d-areceber',fmt(pend.reduce((a,c)=>a+c.val,0)));
 }
+function editarCR(id){
+  const c=CR.find(x=>x.id===id);if(!c)return;
+  const tr=document.getElementById('cr-row-'+id);
+  tr.innerHTML=`
+    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-desc-${id}" value="${c.desc}"></td>
+    <td><input class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-cli-${id}" value="${c.cliente||''}"></td>
+    <td><input type="date" class="form-input" style="padding:5px 8px;font-size:12px;" id="edr-venc-${id}" value="${c.venc}"></td>
+    <td><span class="badge ${c.status==='pago'?'badge-pago':'badge-pend'}">${c.status==='pago'?'✓ Recebido':'Pendente'}</span></td>
+    <td><input type="number" class="form-input" style="padding:5px 8px;font-size:12px;width:110px;" id="edr-val-${id}" value="${c.val}"></td>
+    <td style="display:flex;gap:4px;">
+      <button class="btn btn-sm btn-green" onclick="salvarCR(${id})">✓ Salvar</button>
+      <button class="btn btn-sm btn-outline" onclick="renderCRTable()">✕</button>
+    </td>`;
+}
+function salvarCR(id){
+  const c=CR.find(x=>x.id===id);if(!c)return;
+  c.desc=document.getElementById('edr-desc-'+id).value.trim()||c.desc;
+  c.cliente=document.getElementById('edr-cli-'+id).value.trim();
+  c.venc=document.getElementById('edr-venc-'+id).value||c.venc;
+  c.val=parseFloat(document.getElementById('edr-val-'+id).value)||c.val;
+  saveCR();renderCRTable();updateCRKPIs();
+}
 function renderCRTable(){
   const el=document.getElementById('crTable');
   let data=CR;const f=filterCRAtual;
@@ -1171,14 +1260,15 @@ function renderCRTable(){
   el.innerHTML=`<table><thead><tr><th>Descrição</th><th>Cliente</th><th>Vencimento</th><th>Status</th><th>Valor</th><th></th></tr></thead><tbody>${data.map(c=>{
     const st=statusCR(c);
     const stBadge=st==='pago'?'<span class="badge badge-pago">✓ Recebido</span>':st==='vencido'?'<span class="badge badge-venc">⚠ Atrasado</span>':'<span class="badge badge-pend">Pendente</span>';
-    return`<tr>
+    return`<tr id="cr-row-${c.id}">
       <td>${c.desc}</td>
       <td style="color:var(--muted);font-size:12px">${c.cliente||'—'}</td>
       <td class="mono" style="font-size:12px;color:${st==='vencido'?'var(--red)':'var(--muted)'}">${fmtDFull(c.venc)}</td>
       <td>${stBadge}</td>
-      <td class="val-pos">+${fmt(c.val)}</td>
-      <td style="display:flex;gap:4px;">
+      <td class="val-pos">+${fmtDec(c.val)}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap;">
         ${st!=='pago'?`<button class="btn btn-sm btn-green" onclick="receberCR(${c.id})">✓ Receber</button>`:''}
+        <button class="btn btn-sm btn-blue" style="background:var(--blue);color:#000;" onclick="editarCR(${c.id})">✎ Editar</button>
         <button class="btn btn-sm btn-danger" onclick="delCR(${c.id})">✕</button>
       </td>
     </tr>`;}).join('')}</tbody></table>`;
