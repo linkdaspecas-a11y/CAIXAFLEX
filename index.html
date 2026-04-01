@@ -1709,8 +1709,9 @@ function parsearExtrato(texto,result,preview){
       </select>
     </td>
     <td>
-      <select class="form-select" style="padding:3px 6px;font-size:11px;min-width:140px;" id="imp-cat-${i}">
+      <select class="form-select" style="padding:3px 6px;font-size:11px;min-width:140px;" id="imp-cat-${i}" onchange="checarNovaCat(${i},this)">
         ${[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===l.cat?'selected':''}>${c}</option>`).join('')}
+        <option value="__nova__">+ Nova categoria...</option>
       </select>
     </td>
     <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmt(l.val)}</td>
@@ -1734,6 +1735,29 @@ function atualizarLinhaPdf(i,tipo){
   valEl.textContent=(tipo==='e'?'+':'-')+fmt(window._pdfLancs[i].val);
   sel.style.background=tipo==='e'?'var(--green-dim)':'var(--red-dim)';
   sel.style.color=tipo==='e'?'var(--green)':'var(--red)';
+  // Atualiza opções de categoria conforme tipo
+  const catSel=document.getElementById('imp-cat-'+i);
+  const catAtual=catSel.value;
+  catSel.innerHTML=[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===catAtual?'selected':''}>${c}</option>`).join('')+'<option value="__nova__">+ Nova categoria...</option>';
+}
+
+function checarNovaCat(i,sel){
+  if(sel.value!=='__nova__')return;
+  const tipo=document.getElementById('imp-tipo-'+i).value;
+  const nome=prompt('Nome da nova categoria:');
+  if(!nome){sel.value=tipo==='e'?CATS_E[0]:CATS_S[0];return;}
+  // Adiciona na lista correta
+  if(tipo==='e'){if(!CATS_E.includes(nome))CATS_E.push(nome);}
+  else{if(!CATS_S.includes(nome))CATS_S.push(nome);}
+  saveCats();
+  // Atualiza todos os selects de categoria na tabela
+  document.querySelectorAll('[id^="imp-cat-"]').forEach(s=>{
+    const idx=parseInt(s.id.replace('imp-cat-',''));
+    const t=document.getElementById('imp-tipo-'+idx)?.value||'s';
+    const cur=s.value;
+    s.innerHTML=[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('')+'<option value="__nova__">+ Nova categoria...</option>';
+  });
+  sel.value=nome;
 }
 async function importarSelecionados(lancs){
   const checks=document.querySelectorAll('.chk-imp:checked');
@@ -1741,13 +1765,15 @@ async function importarSelecionados(lancs){
   for(const chk of checks){
     const i=parseInt(chk.dataset.i);const l=lancs[i];
     const conta=document.getElementById('imp-conta-'+i).value;
-    const cat=l.tipo==='e'?'Outras entradas':'Outras saídas';
-    const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:l.data,tipo:l.tipo,conta,cat,descricao:l.desc,val:l.val,ref:'Importado PDF'}).select().single();
+    const tipo=document.getElementById('imp-tipo-'+i)?.value||l.tipo;
+    const cat=document.getElementById('imp-cat-'+i)?.value||l.cat;
+    const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:l.data,tipo,conta,cat,descricao:l.desc,val:l.val,ref:'Importado extrato'}).select().single();
     if(!error){FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});count++;}
   }
   FC.sort((a,b)=>a.data.localeCompare(b.data));
   alert(`${count} lançamento(s) importado(s) com sucesso!`);
   updateAll();document.getElementById('pdfPreview').innerHTML='';
+  document.getElementById('pdfResult').innerHTML=`<div class="pdf-result" style="color:var(--green)">✓ ${count} lançamento(s) importado(s) com sucesso!</div>`;
 }
 
 // ══ EXPORTAR ══
