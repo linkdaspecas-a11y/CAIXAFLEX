@@ -419,13 +419,13 @@ tr:hover td{background:var(--surface2);}
     <div class="kpi-card purple"><div class="kpi-label">Cheques em aberto</div><div class="kpi-value purple" id="d-cheques">R$ 0</div></div>
     <div class="kpi-card amber"><div class="kpi-label">Recorrentes/mês</div><div class="kpi-value amber" id="d-recorr">R$ 0</div></div>
   </div>
-  <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:10px;">DRE — mês selecionado</div>
+  <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:10px;">FLUXO DO MÊS SELECIONADO</div>
   <div class="kpi-grid-5" style="margin-bottom:20px;">
-    <div class="kpi-card blue"><div class="kpi-label">Receita bruta</div><div class="kpi-value" id="d-rec">R$ 0</div></div>
-    <div class="kpi-card red"><div class="kpi-label">CMV</div><div class="kpi-value" id="d-cmv">R$ 0</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Margem bruta</div><div class="kpi-value green" id="d-mb">R$ 0</div><div class="kpi-pct" id="d-mb-pct" style="color:var(--green)">0%</div><div class="margem-bar-wrap"><div class="margem-bar" id="d-mb-bar" style="width:0%;background:var(--green)"></div></div></div>
-    <div class="kpi-card amber"><div class="kpi-label">EBITDA</div><div class="kpi-value" id="d-ebitda">R$ 0</div><div class="kpi-pct" id="d-ebitda-pct">0%</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Lucro líquido</div><div class="kpi-value" id="d-lucro">R$ 0</div><div class="kpi-pct" id="d-lucro-pct">0%</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Total entradas</div><div class="kpi-value" id="d-rec">R$ 0</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Total saídas</div><div class="kpi-value" id="d-cmv">R$ 0</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Resultado</div><div class="kpi-value green" id="d-mb">R$ 0</div><div class="kpi-pct" id="d-mb-pct" style="color:var(--green)">0%</div><div class="margem-bar-wrap"><div class="margem-bar" id="d-mb-bar" style="width:0%;background:var(--green)"></div></div></div>
+    <div class="kpi-card amber"><div class="kpi-label">Resultado acum.</div><div class="kpi-value" id="d-ebitda">R$ 0</div><div class="kpi-pct" id="d-ebitda-pct">0%</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Margem líquida</div><div class="kpi-value" id="d-lucro">R$ 0</div><div class="kpi-pct" id="d-lucro-pct">0%</div></div>
   </div>
   <div class="charts-row">
     <div class="chart-card"><div class="chart-title">Saldo por conta</div><div class="chart-sub">distribuição atual</div><div class="chart-wrap"><canvas id="cContas"></canvas></div></div>
@@ -1525,9 +1525,16 @@ function updateAll(){
 }
 
 function updateDREKPIs(){
-  const key=getDREKey();
-  const[ano,mes]=key.split('-');
-  const{totalRec,totalDesp,resultado}=calcDRE_Auto(`${ano}-${mes}`);
+  const{ano,mes}=getDashFiltro();
+  // Usa o filtro do dashboard, não o seletor do DRE
+  const prefix=mes==='todos'?(ano==='todos'?null:ano):`${ano}-${mes}`;
+  let totalRec=0,totalDesp=0;
+  if(prefix){
+    const fc=FC.filter(l=>l.data.startsWith(prefix));
+    totalRec=fc.filter(l=>l.tipo==='e').reduce((a,l)=>a+l.val,0);
+    totalDesp=fc.filter(l=>l.tipo==='s').reduce((a,l)=>a+l.val,0);
+  }
+  const resultado=totalRec-totalDesp;
   const margem=totalRec?resultado/totalRec:0;
   setEl('d-rec',fmt(totalRec));setEl('d-cmv',fmt(totalDesp));
   setEl('d-mb',fmt(resultado),resultado>=0?'kpi-value green':'kpi-value red');
@@ -2272,4 +2279,3 @@ if(sessionStorage.getItem('cf4_auth')==='1'){init();}
 </script>
 </body>
 </html>
-                                                                    
