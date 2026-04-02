@@ -2018,193 +2018,95 @@ function parsearExtrato(texto,result,preview){
       }
     });
   } else {
-    // ══ BRADESCO — Parser definitivo baseado no output real do PDF.js ══
-    // Confirmado pelo debug (400 linhas):
-    // PADRÃO 1: "02/01/26    Resgate Inv Fac 6152274   6.780,30   6.781,30"
-    // PADRÃO 2: "02/01/26   2720284   600,00   601,00" + nome na linha seguinte
-    // PADRÃO 3: "Tipo" isolado + "DOCTO   VAL" + nome na linha seguinte
-    // PADRÃO 4: "Tipo  DOCTO   VAL" inline
-    // NOME: vem DEPOIS do docto+valor (exceto Rem:/Des: que vem antes via inline ou separado)
+    // ══ BRADESCO — Parser definitivo v5 ══
+    // Formato real confirmado: "DESC DOCTO- VALOR" = débito, "DESC DOCTO VALOR SALDO" = crédito
+    const INTERNOS_BR=['rent.inv','apl.invest','resg/vencto','rentab.invest',
+      'resgate inv fac','saldo invest','resg.autom','saldo anterior',
+      'resgate invest facil','resg.autom.invest'];
+    const PULAR_BR=['total ','data histórico','data   histórico','https://',
+      '02/04/2026','saldo invest','fone fácil','sac ','ouvidoria','se preferir',
+      'demais regiões','capitais e regiões','internet banking','nome:','extrato de',
+      'bradesco internet','atendimento','cancelamento','consulta de saldo',
+      'os dados acima','saldos invest'];
 
-    const IGN_BR=['saldo anterior','data   histórico','data histórico','---pagina---',
-      'total ','saldo invest','rent.inv','apl.invest fac','resg/vencto cdb',
-      'resg.autom','rentab.invest','os dados','saldos invest','fone fácil',
-      'sac ','ouvidoria','se preferir','internet banking','nome:','extrato de',
-      '02/04/2026, 08:35','bradesco internet','demais regiões','capitais e regiões',
-      'atendimento 24','cancelamento','consulta de saldo'];
-
-    const INT_BR=['rent.inv','apl.invest fac','resg/vencto cdb','resg.autom',
-      'rentab.invest','saldo invest','resgate inv fac','resg/vencto'];
-
-    function ignBr(l){
-      if(!l||l.length<2)return true;
-      const lo=l.toLowerCase();
-      if(/^https?:\/\//.test(l)||/^\d+\/\d+$/.test(l)||/^\d{2}\/\d{2}\/\d{4},/.test(l))return true;
-      return IGN_BR.some(p=>lo.includes(p));
+    function intBr(s){return INTERNOS_BR.some(p=>(s||'').toLowerCase().includes(p));}
+    function pulaBr(l){
+      const lo=(l||'').toLowerCase();
+      if(!lo||lo.length<3)return true;
+      if(/^https?:\/\//.test(lo))return true;
+      if(/^\d+\/\d+$/.test(lo))return true;
+      return PULAR_BR.some(p=>lo.includes(p));
     }
-    function intBr(s){return INT_BR.some(p=>(s||'').toLowerCase().includes(p));}
-    function limBr(d){return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
+    function limBr(d){
+      return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    }
     function pV(v){return parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));}
 
-    // Padrões
-    const P1=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
-    const P2=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
-    const P3=/^(.+?)\s{2,}(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
-    const P4=/^(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
+    // DÉBITO: [DATA ] DESC DOCTO- VALOR [SALDO]
+    const R_DEB=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.*?)\s*(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // CRÉDITO com saldo: [DATA ] DESC DOCTO VALOR SALDO
+    const R_CRE=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+    // CRÉDITO sem saldo: [DATA ] DESC DOCTO VALOR
+    const R_CRE2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
+    // Só data+docto+val+saldo (interno)
+    const R_SOM=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
 
-    let dt=null;        // data atual
-    let tipoBuf='';     // tipo aguardando docto+val
-    let pendNeg=false;  // neg do pendente
-    let pendVal=0;      // val do pendente
-    let pendDesc='';    // desc parcial do pendente
-    let hasPend=false;  // tem lançamento aguardando nome
-
-    function salvar(desc){
-      if(!hasPend||pendVal<=0){hasPend=false;return;}
-      if(intBr(desc)||intBr(tipoBuf)){hasPend=false;tipoBuf='';return;}
-      const d=limBr(desc||tipoBuf||'Lançamento');
-      if(!d||d.length<2){hasPend=false;return;}
-      const tipo=pendNeg?'s':'e';
-      lancamentos.push({data:dt,desc:d,val:pendVal,tipo,cat:sugerirCat(d,tipo)});
-      hasPend=false;tipoBuf='';pendDesc='';
-    }
+    let dt=null;
 
     linhas.forEach(linha=>{
-      if(ignBr(linha))return;
+      linha=linha.trim();
+      if(pulaBr(linha))return;
       if(linha.includes('Data')&&linha.includes('Histórico'))return;
 
-      // P1: DATA DESC DOCTO VAL
-      let m=linha.match(P1);
+      // Só data+docto+val+saldo → atualiza data, sem lançamento
+      let m=linha.match(R_SOM);
+      if(m){dt=parsarData(m[1]);return;}
+
+      // DÉBITO
+      m=linha.match(R_DEB);
       if(m){
-        salvar(pendDesc||tipoBuf); // fecha anterior se houver
-        dt=parsarData(m[1]);
-        const desc=limBr(m[2]);
-        const neg=m[4].includes('-');
+        if(m[1])dt=parsarData(m[1]);
+        if(!dt)return;
+        const desc=limBr(m[2]||'');
         const val=pV(m[4]);
-        if(!intBr(desc)&&val>0.1){
-          pendNeg=neg;pendVal=val;pendDesc=desc;hasPend=true;
-          // P1 com Rem:/Des: já tem o nome — salva direto
-          salvar(desc);
-        }
-        tipoBuf='';
+        if(val<0.05||val>10000000)return;
+        if(intBr(desc))return;
+        const d=desc||m[3];
+        if(!d||d.length<2)return;
+        lancamentos.push({data:dt,desc:d,val,tipo:'s',cat:sugerirCat(d,'s')});
         return;
       }
 
-      // P2: DATA DOCTO VAL (sem desc) — nome vem depois
-      m=linha.match(P2);
+      // CRÉDITO com saldo
+      m=linha.match(R_CRE);
       if(m){
-        salvar(pendDesc||tipoBuf);
-        dt=parsarData(m[1]);
-        const neg=m[3].includes('-');
-        const val=pV(m[3]);
-        if(val>0.1){pendNeg=neg;pendVal=val;pendDesc='';hasPend=true;}
-        tipoBuf='';
+        if(m[1])dt=parsarData(m[1]);
+        if(!dt)return;
+        const desc=limBr(m[2]||'');
+        const val=pV(m[4]);
+        if(val<0.05||val>10000000)return;
+        if(intBr(desc))return;
+        if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc))return;
+        if(!desc||desc.length<2)return;
+        lancamentos.push({data:dt,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
         return;
       }
 
-      if(!dt)return;
-
-      // P3: TIPO  DOCTO  VAL (inline)
-      m=linha.match(P3);
+      // CRÉDITO sem saldo
+      m=linha.match(R_CRE2);
       if(m){
-        salvar(pendDesc||tipoBuf);
-        const tipo=limBr(m[1]);
-        const neg=m[3].includes('-');
-        const val=pV(m[3]);
-        if(!intBr(tipo)&&val>0.1){
-          pendNeg=neg;pendVal=val;pendDesc=tipo;hasPend=true;
-          // Se o tipo é inline completo, salva direto (nome já está no tipo)
-          salvar(tipo);
-        }
-        tipoBuf='';
-        return;
-      }
-
-      // P4: DOCTO VAL — usa tipoBuf como desc, nome vem depois
-      m=linha.match(P4);
-      if(m){
-        salvar(pendDesc||tipoBuf);
-        const neg=m[2].includes('-');
-        const val=pV(m[2]);
-        if(!intBr(tipoBuf)&&val>0.1){
-          pendNeg=neg;pendVal=val;pendDesc=tipoBuf;hasPend=true;
-          // Não salva ainda — aguarda nome na próxima linha
-        } else {
-          hasPend=false;
-        }
-        tipoBuf='';
-        return;
-      }
-
-      // Texto puro
-      const txt=limBr(linha);
-      if(!txt||txt.length<2||ignBr(txt))return;
-
-      if(hasPend&&pendVal>0){
-        // Nome chegou depois do valor — finaliza com esse nome
-        salvar(txt);
-      } else {
-        // Nome/tipo antes do valor — acumula
-        tipoBuf=txt;
+        if(m[1])dt=parsarData(m[1]);
+        if(!dt)return;
+        const desc=limBr(m[2]||'');
+        const val=pV(m[4]);
+        if(val<0.05||val>10000000)return;
+        if(intBr(desc))return;
+        if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc))return;
+        if(!desc||desc.length<2)return;
+        lancamentos.push({data:dt,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
       }
     });
-    salvar(pendDesc||tipoBuf);
   }
-  // Remove duplicatas
-  const vistos=new Set();
-  const filtrados=lancamentos.filter(l=>{
-    const k=`${l.data}|${l.val}|${l.tipo}|${l.desc.slice(0,15)}`;
-    if(vistos.has(k))return false;
-    vistos.add(k);return true;
-  });
-
-  if(!filtrados.length){
-    const debug=linhas.map((l,i)=>`${String(i).padStart(3,'0')}: |${l}|`).join('\n');
-    result.innerHTML=`<div class="pdf-result" style="color:var(--amber);font-family:monospace;font-size:10px;white-space:pre-wrap;max-height:600px;overflow-y:auto;">BANCO: ${banco} | TOTAL LINHAS: ${linhas.length}\n\n${debug}</div>`;
-    preview.innerHTML='';return;
-  }
-
-  const entradas=filtrados.filter(l=>l.tipo==='e');
-  const saidas=filtrados.filter(l=>l.tipo==='s');
-  result.innerHTML=`<div class="pdf-result" style="color:var(--green)">
-    ✓ <strong>${filtrados.length} lançamento(s) — ${banco.toUpperCase()}</strong> ·
-    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmtDec(entradas.reduce((a,l)=>a+l.val,0))})</span> ·
-    <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmtDec(saidas.reduce((a,l)=>a+l.val,0))})</span>
-  </div>`;
-
-  window._pdfLancs=filtrados;
-
-  preview.innerHTML=`<div class="card"><div class="card-header">
-    <div class="card-title">Lançamentos identificados</div>
-    <button class="btn btn-green" id="btnImportar" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
-  </div>
-  <table><thead><tr>
-    <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=this.checked)"></th>
-    <th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Conta</th>
-  </tr></thead><tbody>
-  ${filtrados.map((l,i)=>`<tr>
-    <td><input type="checkbox" class="chk-imp" checked data-i="${i}"></td>
-    <td class="mono" style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
-    <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
-    <td><select style="background:${l.tipo==='e'?'var(--green-dim)':'var(--red-dim)'};color:${l.tipo==='e'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;" id="imp-tipo-${i}" onchange="atualizarLinhaPdf(${i},this.value)">
-      <option value="e" ${l.tipo==='e'?'selected':''}>▲ Entrada</option>
-      <option value="s" ${l.tipo==='s'?'selected':''}>▼ Saída</option>
-    </select></td>
-    <td><select class="form-select" style="padding:3px 6px;font-size:11px;min-width:140px;" id="imp-cat-${i}" onchange="checarNovaCat(${i},this)">
-      ${[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===l.cat?'selected':''}>${c}</option>`).join('')}
-      <option value="__nova__">+ Nova categoria...</option>
-    </select></td>
-    <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmtDec(l.val)}</td>
-    <td><select class="form-select" style="padding:3px 6px;font-size:11px;width:90px;" id="imp-conta-${i}">
-      <option value="itau" ${banco==='itau'?'selected':''}>Itaú</option>
-      <option value="bradesco" ${banco==='bradesco'?'selected':''}>Bradesco</option>
-      <option value="caixa">Caixa</option>
-    </select></td>
-  </tr>`).join('')}
-  </tbody></table>
-  <div style="padding:14px 20px;border-top:1px solid var(--border);">
-    <button class="btn btn-green" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
-  </div></div>`;
 }
 
 function atualizarLinhaPdf(i,tipo){
