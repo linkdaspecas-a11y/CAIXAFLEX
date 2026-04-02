@@ -2133,7 +2133,8 @@ function parsearExtrato(texto,result,preview){
   });
 
   if(!filtrados.length){
-    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado. Banco detectado: <strong>${banco}</strong></div>`;
+    const debug=linhas.map((l,i)=>`${String(i).padStart(3,'0')}: |${l}|`).join('\n');
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber);font-family:monospace;font-size:10px;white-space:pre-wrap;max-height:600px;overflow-y:auto;">BANCO: ${banco} | TOTAL LINHAS: ${linhas.length}\n\n${debug}</div>`;
     preview.innerHTML='';return;
   }
 
