@@ -2018,111 +2018,137 @@ function parsearExtrato(texto,result,preview){
       }
     });
   } else {
-    // ══ BRADESCO — baseado no formato REAL do PDF.js (debug confirmado) ══
-    // PDF.js extrai assim (diferente do pypdf):
-    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30" ← data+desc+docto+cred+saldo
-    // "Transfe Pix"         ← tipo isolado
-    // "0927480   1.286,00"  ← docto + crédito
-    // "Rem: Segura Comercio de pe 02/01" ← descrição isolada
-    // "Pagto Cobranca"      ← tipo
-    // "0000564   - 1.260,83" ← docto + débito
-    // "Escola do Lucas"     ← nome
-    // "05/01/26   2720284   600,00   601,00" ← data+docto+cred+saldo (sem desc)
-    // "Vilse Jorge Camargo" ← nome (linha após)
+    // ══ BRADESCO — Parser definitivo baseado no output real do PDF.js ══
+    // Confirmado pelo debug (400 linhas):
+    // PADRÃO 1: "02/01/26    Resgate Inv Fac 6152274   6.780,30   6.781,30"
+    // PADRÃO 2: "02/01/26   2720284   600,00   601,00" + nome na linha seguinte
+    // PADRÃO 3: "Tipo" isolado + "DOCTO   VAL" + nome na linha seguinte
+    // PADRÃO 4: "Tipo  DOCTO   VAL" inline
+    // NOME: vem DEPOIS do docto+valor (exceto Rem:/Des: que vem antes via inline ou separado)
 
-    const SKIP_BR=['saldo anterior','data   histórico','data histórico','total ','bradesco s/a',
-      'saldo invest','rent.inv','apl.invest','resg/vencto','resg.autom','rentab.invest',
-      'internet banking','fone fácil','sac ','ouvidoria','os dados acima',
-      'últimos lançamentos','nome:','extrato de','saldos invest',
-      'capitais e regiões','demais regiões','atendimento 24','cancelamento',
-      'consulta de saldo','se preferir'];
+    const IGN_BR=['saldo anterior','data   histórico','data histórico','---pagina---',
+      'total ','saldo invest','rent.inv','apl.invest fac','resg/vencto cdb',
+      'resg.autom','rentab.invest','os dados','saldos invest','fone fácil',
+      'sac ','ouvidoria','se preferir','internet banking','nome:','extrato de',
+      '02/04/2026, 08:35','bradesco internet','demais regiões','capitais e regiões',
+      'atendimento 24','cancelamento','consulta de saldo'];
 
-    const TIPOS_BR=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul',
-      'Pagto Cobranca','Pagto Eletron Cobranca','Pagto Eletron',
-      'Saque Din Atm','Saque Dinheiro Atm','Apl.invest Fac',
-      'Resgate Inv Fac','Resg/vencto Cdb','Rent.inv.facil',
-      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix',
-      'Resg.autom.invest Facil','Rentab.invest Facilcred'];
+    const INT_BR=['rent.inv','apl.invest fac','resg/vencto cdb','resg.autom',
+      'rentab.invest','saldo invest','resgate inv fac','resg/vencto'];
 
-    function skipBr(l){
+    function ignBr(l){
       if(!l||l.length<2)return true;
       const lo=l.toLowerCase();
-      if(/^https?:\/\//.test(l))return true;
-      if(/^\d+\/\d+$/.test(l))return true;
-      if(/^\d{2}\/\d{2}\/\d{4},/.test(l))return true;
-      return SKIP_BR.some(p=>lo.includes(p));
+      if(/^https?:\/\//.test(l)||/^\d+\/\d+$/.test(l)||/^\d{2}\/\d{2}\/\d{4},/.test(l))return true;
+      return IGN_BR.some(p=>lo.includes(p));
     }
+    function intBr(s){return INT_BR.some(p=>(s||'').toLowerCase().includes(p));}
+    function limBr(d){return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
+    function pV(v){return parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));}
 
-    function limpar(d){
-      return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-    }
+    // Padrões
+    const P1=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
+    const P2=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
+    const P3=/^(.+?)\s{2,}(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
+    const P4=/^(\d{4,})\s+([-]?\s*[\d\.]+,\d{2})(?:\s+[\-\d\.]+,\d{2})?$/;
 
-    // "DATA   qualquer coisa" → extrai data e retorna o resto
-    const R_DATA=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
-    // "DESC DOCTO [-]VALOR [SALDO]" — tudo junto
-    const R_FULL=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // "DOCTO [-]VALOR [SALDO]" — sem desc
-    const R_DOCV=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    let dt=null;        // data atual
+    let tipoBuf='';     // tipo aguardando docto+val
+    let pendNeg=false;  // neg do pendente
+    let pendVal=0;      // val do pendente
+    let pendDesc='';    // desc parcial do pendente
+    let hasPend=false;  // tem lançamento aguardando nome
 
-    let dataAtual=null, descBuf='', emDados=false;
-
-    function salvar(desc, neg, val){
-      if(!dataAtual||val<0.10||val>10000000)return;
-      desc=desc.trim()||'Lançamento';
-      if(skipBr(desc))return;
-      const tipo=neg?'s':'e';
-      lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
-      descBuf='';
+    function salvar(desc){
+      if(!hasPend||pendVal<=0){hasPend=false;return;}
+      if(intBr(desc)||intBr(tipoBuf)){hasPend=false;tipoBuf='';return;}
+      const d=limBr(desc||tipoBuf||'Lançamento');
+      if(!d||d.length<2){hasPend=false;return;}
+      const tipo=pendNeg?'s':'e';
+      lancamentos.push({data:dt,desc:d,val:pendVal,tipo,cat:sugerirCat(d,tipo)});
+      hasPend=false;tipoBuf='';pendDesc='';
     }
 
     linhas.forEach(linha=>{
-      if(skipBr(linha))return;
-      if(linha.includes('Data')&&linha.includes('Histórico')){emDados=true;return;}
-      if(!emDados)return;
+      if(ignBr(linha))return;
+      if(linha.includes('Data')&&linha.includes('Histórico'))return;
 
-      // Extrai data se presente no início
-      const mD=linha.match(R_DATA);
-      if(mD){
-        const d=parsarData(mD[1]);
-        if(d)dataAtual=d;
-        linha=mD[2].trim();
-        if(!linha)return;
-      }
-      if(!dataAtual)return;
-
-      // Tipo isolado → vira descrição
-      if(TIPOS_BR.includes(linha.trim())){
-        descBuf=descBuf?descBuf+' '+linha.trim():linha.trim();
+      // P1: DATA DESC DOCTO VAL
+      let m=linha.match(P1);
+      if(m){
+        salvar(pendDesc||tipoBuf); // fecha anterior se houver
+        dt=parsarData(m[1]);
+        const desc=limBr(m[2]);
+        const neg=m[4].includes('-');
+        const val=pV(m[4]);
+        if(!intBr(desc)&&val>0.1){
+          pendNeg=neg;pendVal=val;pendDesc=desc;hasPend=true;
+          // P1 com Rem:/Des: já tem o nome — salva direto
+          salvar(desc);
+        }
+        tipoBuf='';
         return;
       }
 
-      // "DESC DOCTO [-]VALOR" — lança direto
-      const mF=linha.match(R_FULL);
-      if(mF){
-        const desc=limpar(mF[1]);
-        const neg=!!mF[3];
-        const val=parsarValor(mF[4]);
-        // Se tem desc no buffer, combina
-        const descFinal=descBuf?limpar(descBuf)+' · '+desc:desc;
-        salvar(descFinal,neg,val);
+      // P2: DATA DOCTO VAL (sem desc) — nome vem depois
+      m=linha.match(P2);
+      if(m){
+        salvar(pendDesc||tipoBuf);
+        dt=parsarData(m[1]);
+        const neg=m[3].includes('-');
+        const val=pV(m[3]);
+        if(val>0.1){pendNeg=neg;pendVal=val;pendDesc='';hasPend=true;}
+        tipoBuf='';
         return;
       }
 
-      // "DOCTO [-]VALOR" — usa desc do buffer
-      const mDV=linha.match(R_DOCV);
-      if(mDV){
-        const neg=!!mDV[2];
-        const val=parsarValor(mDV[3]);
-        salvar(descBuf||'Lançamento',neg,val);
+      if(!dt)return;
+
+      // P3: TIPO  DOCTO  VAL (inline)
+      m=linha.match(P3);
+      if(m){
+        salvar(pendDesc||tipoBuf);
+        const tipo=limBr(m[1]);
+        const neg=m[3].includes('-');
+        const val=pV(m[3]);
+        if(!intBr(tipo)&&val>0.1){
+          pendNeg=neg;pendVal=val;pendDesc=tipo;hasPend=true;
+          // Se o tipo é inline completo, salva direto (nome já está no tipo)
+          salvar(tipo);
+        }
+        tipoBuf='';
         return;
       }
 
-      // Texto puro → acumula como descrição
-      const txt=limpar(linha);
-      if(txt.length>1&&!skipBr(txt)){
-        descBuf=descBuf?descBuf+' '+txt:txt;
+      // P4: DOCTO VAL — usa tipoBuf como desc, nome vem depois
+      m=linha.match(P4);
+      if(m){
+        salvar(pendDesc||tipoBuf);
+        const neg=m[2].includes('-');
+        const val=pV(m[2]);
+        if(!intBr(tipoBuf)&&val>0.1){
+          pendNeg=neg;pendVal=val;pendDesc=tipoBuf;hasPend=true;
+          // Não salva ainda — aguarda nome na próxima linha
+        } else {
+          hasPend=false;
+        }
+        tipoBuf='';
+        return;
+      }
+
+      // Texto puro
+      const txt=limBr(linha);
+      if(!txt||txt.length<2||ignBr(txt))return;
+
+      if(hasPend&&pendVal>0){
+        // Nome chegou depois do valor — finaliza com esse nome
+        salvar(txt);
+      } else {
+        // Nome/tipo antes do valor — acumula
+        tipoBuf=txt;
       }
     });
+    salvar(pendDesc||tipoBuf);
   }
   // Remove duplicatas
   const vistos=new Set();
