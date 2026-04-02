@@ -312,6 +312,22 @@ tr:hover td{background:var(--surface2);}
   .btn-sm{padding:4px 8px;font-size:11px;}
   #cpParcelasGrid > div,#crParcelasGrid > div{grid-template-columns:60px 1fr 1fr!important;}
 }
+/* MODAL PAGAMENTO */
+.pay-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.pay-modal-overlay.open{display:flex;}
+.pay-modal{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:28px;width:380px;max-width:95vw;}
+.pay-modal-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:4px;}
+.pay-modal-sub{font-size:12px;color:var(--muted);margin-bottom:20px;}
+.pay-modal-val{font-family:'DM Mono',monospace;font-size:22px;font-weight:500;color:var(--green);margin-bottom:20px;}
+.pay-conta-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px;}
+.pay-conta-btn{border:2px solid var(--border);border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;transition:all 0.15s;background:transparent;}
+.pay-conta-btn:hover{border-color:var(--border2);background:var(--surface2);}
+.pay-conta-btn.sel-itau{border-color:var(--itau);background:var(--itau-dim);}
+.pay-conta-btn.sel-bradesco{border-color:var(--bradesco);background:var(--bradesco-dim);}
+.pay-conta-btn.sel-caixa{border-color:var(--caixa);background:var(--caixa-dim);}
+.pay-conta-nome{font-size:13px;font-weight:600;margin-bottom:4px;}
+.pay-conta-saldo{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+.pay-modal-footer{display:flex;gap:10px;justify-content:flex-end;}
 </style>
 </head>
 <body>
@@ -865,6 +881,34 @@ tr:hover td{background:var(--surface2);}
 </main>
 </div>
 
+<!-- MODAL PAGAMENTO -->
+<div class="pay-modal-overlay" id="payModal">
+  <div class="pay-modal">
+    <div class="pay-modal-title" id="payModalTitle">Confirmar pagamento</div>
+    <div class="pay-modal-sub" id="payModalSub"></div>
+    <div class="pay-modal-val" id="payModalVal"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.8px;">Débitar de qual conta?</div>
+    <div class="pay-conta-grid">
+      <div class="pay-conta-btn" id="pay-btn-itau" onclick="selecionarContaPag('itau')">
+        <div class="pay-conta-nome" style="color:var(--itau)">Itaú</div>
+        <div class="pay-conta-saldo" id="pay-saldo-itau">R$ 0</div>
+      </div>
+      <div class="pay-conta-btn" id="pay-btn-bradesco" onclick="selecionarContaPag('bradesco')">
+        <div class="pay-conta-nome" style="color:var(--bradesco)">Bradesco</div>
+        <div class="pay-conta-saldo" id="pay-saldo-bradesco">R$ 0</div>
+      </div>
+      <div class="pay-conta-btn" id="pay-btn-caixa" onclick="selecionarContaPag('caixa')">
+        <div class="pay-conta-nome" style="color:var(--caixa)">Caixa físico</div>
+        <div class="pay-conta-saldo" id="pay-saldo-caixa">R$ 0</div>
+      </div>
+    </div>
+    <div class="pay-modal-footer">
+      <button class="btn btn-outline" onclick="fecharPayModal()">Cancelar</button>
+      <button class="btn btn-green" id="payModalConfirm" onclick="confirmarPagamento()" disabled style="opacity:0.5">Confirmar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MOBILE BOTTOM NAV -->
 <div id="mobile-nav">
   <div class="mob-btn active" id="mob-dashboard" onclick="mobGo('dashboard',this)">
@@ -1234,31 +1278,71 @@ function addCP(){
   document.getElementById('cpParcelado').checked=false;
   toggleParcelamento(false);
 }
-async function pagarCP(id){
-  const cp=CP.find(c=>c.id===id);if(!cp)return;
-  // Pergunta qual conta vai debitar
-  const conta=prompt(`Pagar "${cp.desc}" (${fmtDec(cp.val)})\n\nDigite a conta:\n1 = Itaú\n2 = Bradesco\n3 = Caixa físico`);
-  const contaMap={'1':'itau','2':'bradesco','3':'caixa'};
-  const contaSel=contaMap[conta?.trim()];
-  if(!contaSel){alert('Cancelado ou conta inválida.');return;}
-  // Cria lançamento de saída automaticamente
-  const{data:row,error}=await SB.from('cf3_lancamentos').insert({
-    data:today(),
-    tipo:'s',
-    conta:contaSel,
-    cat:cp.cat||'Outras saídas',
-    descricao:`Pgto: ${cp.desc}${cp.nf?' ('+cp.nf+')':''}`,
-    val:cp.val,
-    ref:'Conta a pagar'
-  }).select().single();
-  if(error){alert('Erro ao lançar: '+error.message);return;}
-  FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
-  FC.sort((a,b)=>a.data.localeCompare(b.data));
-  // Marca como pago
-  cp.status='pago';cp.pago_em=today();cp.conta_pago=contaSel;
-  saveCP();renderCPTable();updateCPKPIs();updateAll();
-  alert(`✓ Pago! Debitado de ${CONTA_LABELS[contaSel]}: ${fmtDec(cp.val)}`);
+// ══ MODAL PAGAMENTO ══
+let _payId=null,_payTipo=null,_payConta=null;
+
+function abrirPayModal(id, tipo){
+  _payId=id;_payTipo=tipo;_payConta=null;
+  const item=tipo==='cp'?CP.find(c=>c.id===id):CR.find(c=>c.id===id);
+  if(!item)return;
+  document.getElementById('payModalTitle').textContent=tipo==='cp'?'Confirmar pagamento':'Confirmar recebimento';
+  document.getElementById('payModalSub').textContent=item.desc+(item.nf?' · '+item.nf:'');
+  document.getElementById('payModalVal').textContent=(tipo==='cp'?'-':'+')+'  '+fmtDec(item.val);
+  document.getElementById('payModalVal').style.color=tipo==='cp'?'var(--red)':'var(--green)';
+  // Mostra saldos atuais
+  const saldos=calcSaldos();
+  document.getElementById('pay-saldo-itau').textContent=fmt(saldos.itau);
+  document.getElementById('pay-saldo-bradesco').textContent=fmt(saldos.bradesco);
+  document.getElementById('pay-saldo-caixa').textContent=fmt(saldos.caixa);
+  // Reset seleção
+  ['itau','bradesco','caixa'].forEach(c=>{
+    const btn=document.getElementById('pay-btn-'+c);
+    btn.className='pay-conta-btn';
+  });
+  document.getElementById('payModalConfirm').disabled=true;
+  document.getElementById('payModalConfirm').style.opacity='0.5';
+  document.getElementById('payModal').classList.add('open');
 }
+function selecionarContaPag(conta){
+  _payConta=conta;
+  ['itau','bradesco','caixa'].forEach(c=>{
+    document.getElementById('pay-btn-'+c).className='pay-conta-btn';
+  });
+  document.getElementById('pay-btn-'+conta).className=`pay-conta-btn sel-${conta}`;
+  document.getElementById('payModalConfirm').disabled=false;
+  document.getElementById('payModalConfirm').style.opacity='1';
+}
+function fecharPayModal(){
+  document.getElementById('payModal').classList.remove('open');
+  _payId=null;_payTipo=null;_payConta=null;
+}
+async function confirmarPagamento(){
+  if(!_payConta||!_payId)return;
+  document.getElementById('payModalConfirm').textContent='⏳';
+  document.getElementById('payModalConfirm').disabled=true;
+  if(_payTipo==='cp'){
+    const cp=CP.find(c=>c.id===_payId);if(!cp)return;
+    const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:today(),tipo:'s',conta:_payConta,cat:cp.cat||'Outras saídas',descricao:`Pgto: ${cp.desc}${cp.nf?' ('+cp.nf+')':''}`,val:cp.val,ref:'Conta a pagar'}).select().single();
+    if(error){alert('Erro: '+error.message);fecharPayModal();return;}
+    FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
+    FC.sort((a,b)=>a.data.localeCompare(b.data));
+    cp.status='pago';cp.pago_em=today();cp.conta_pago=_payConta;
+    saveCP();renderCPTable();updateCPKPIs();
+  } else {
+    const cr=CR.find(c=>c.id===_payId);if(!cr)return;
+    const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:today(),tipo:'e',conta:_payConta,cat:'Outras entradas',descricao:`Recebto: ${cr.desc}${cr.cliente?' - '+cr.cliente:''}${cr.nf?' ('+cr.nf+')':''}`,val:cr.val,ref:'Conta a receber'}).select().single();
+    if(error){alert('Erro: '+error.message);fecharPayModal();return;}
+    FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
+    FC.sort((a,b)=>a.data.localeCompare(b.data));
+    cr.status='pago';cr.recebido_em=today();cr.conta_recebido=_payConta;
+    saveCR();renderCRTable();updateCRKPIs();
+  }
+  updateAll();
+  fecharPayModal();
+}
+
+async function pagarCP(id){abrirPayModal(id,'cp');}
+async function receberCR(id){abrirPayModal(id,'cr');}
 function delCP(id){CP=CP.filter(c=>c.id!==id);saveCP();renderCPTable();updateCPKPIs();updateAll();}
 function filterCP(f,el){filterCPAtual=f;document.querySelectorAll('#view-contaspagar .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCPTable();}
 function statusCP(c){const td=today();if(c.status==='pago')return'pago';if(c.venc<td)return'vencido';return'pendente';}
@@ -1365,20 +1449,6 @@ function addCR(){
   saveCR();renderCRTable();updateCRKPIs();updateAll();
   document.getElementById('crDesc').value='';document.getElementById('crNF').value='';document.getElementById('crVal').value='';document.getElementById('crCliente').value='';
   document.getElementById('crParcelado').checked=false;toggleParcelamentoCr(false);
-}
-async function receberCR(id){
-  const cr=CR.find(c=>c.id===id);if(!cr)return;
-  const conta=prompt(`Receber "${cr.desc}" (${fmtDec(cr.val)})\n\nQual conta vai receber?\n1 = Itaú\n2 = Bradesco\n3 = Caixa físico`);
-  const contaMap={'1':'itau','2':'bradesco','3':'caixa'};
-  const contaSel=contaMap[conta?.trim()];
-  if(!contaSel){alert('Cancelado ou conta inválida.');return;}
-  const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:today(),tipo:'e',conta:contaSel,cat:'Outras entradas',descricao:`Recebto: ${cr.desc}${cr.cliente?' - '+cr.cliente:''}${cr.nf?' ('+cr.nf+')':''}`,val:cr.val,ref:'Conta a receber'}).select().single();
-  if(error){alert('Erro ao lançar: '+error.message);return;}
-  FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});
-  FC.sort((a,b)=>a.data.localeCompare(b.data));
-  cr.status='pago';cr.recebido_em=today();
-  saveCR();renderCRTable();updateCRKPIs();updateAll();
-  alert(`✓ Recebido! Creditado em ${CONTA_LABELS[contaSel]}: ${fmtDec(cr.val)}`);
 }
 function delCR(id){if(!confirm('Excluir?'))return;CR=CR.filter(c=>c.id!==id);saveCR();renderCRTable();updateCRKPIs();updateAll();}
 function filterCR(f,el){filterCRAtual=f;document.querySelectorAll('#view-contasreceber .filter-tab').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderCRTable();}
