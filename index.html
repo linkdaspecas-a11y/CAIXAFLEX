@@ -2019,42 +2019,112 @@ function parsearExtrato(texto,result,preview){
     });
   } else {
     // ── BRADESCO ──
+    // PDF.js extrai colunas separadas em linhas diferentes:
+    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30"
+    // "Transfe Pix"  ← tipo (linha separada)
+    // "0927480   1.286,00"  ← só docto + crédito
+    // "Rem: Segura Comercio de pe 02/01"  ← descrição
+    // "Pagto Cobranca"  ← tipo
+    // "0000564   - 1.260,83"  ← docto + débito
+    // "Escola do Lucas"  ← nome
+    // "Transf Autoriz"  ← tipo
+    // "0636931   - 4.334,40   1,00"  ← docto + débito + saldo
+
     const IGBR=['saldo anterior','data histórico','total ','bradesco s/a','saldo invest',
-      'rent.inv','apl.invest fac','resg/vencto','resg.autom','rentab.invest',
+      'rent.inv','apl.invest','resg/vencto','resg.autom','rentab.invest',
       'internet banking','fone fácil','sac ','ouvidoria','os dados acima',
-      'últimos lançamentos','nome:','extrato de','saldos invest','---pagina---'];
-    function limpBr(d){return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
-    const PAT_A=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})$/;
-    const PAT_A2=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([-]\s*[\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-    const PAT_B=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    const PAT_C=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    let dataAtual=null,emDados=false;
+      'últimos lançamentos','nome:','extrato de','saldos invest'];
+
+    // Padrão 1: DATA + conteúdo na mesma linha
+    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30"
+    const PAT_DATA_LINHA=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
+    // Padrão 2: só DOCTO + [-]VALOR [SALDO]
+    // "0927480   1.286,00" ou "0000564   - 1.260,83"
+    const PAT_DOCTO_VAL=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Padrão 3: DESC + DOCTO + [-]VALOR [SALDO] (tudo numa linha)
+    // "Escola do Lucas 0000564 - 1.260,83"
+    const PAT_DESC_DOCTO=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Padrão 4: DOCTO + VALOR + SALDO (crédito, 3 valores)
+    // "0927480   1.286,00   5.000,00"
+    const PAT_DOCTO_3=/^(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+
+    const TIPOS_BR=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul',
+      'Pagto Cobranca','Pagto Eletron','Saque Din Atm','Saque Dinheiro Atm',
+      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix','Ted Recebido'];
+
+    let dataAtual=null;
+    let nomeProx=null; // nome que vem DEPOIS do tipo e ANTES do docto+valor
+    let tipoAtual=null;
+    let emDados=false;
+
     linhas.forEach(linha=>{
-      if(linha.includes('Data Histórico')){emDados=true;return;}
-      if(!emDados)return;
-      if(/^https?:\/\//.test(linha)||/total\s/i.test(linha)||linha.includes('Banco Bradesco'))return;
-      if(PAT_A.test(linha)){const m=linha.match(PAT_A);const d=parsarData(m[1]);if(d)dataAtual=d;return;}
-      if(PAT_A2.test(linha)){const m=linha.match(PAT_A2);const d=parsarData(m[1]);if(d)dataAtual=d;return;}
-      const mB=linha.match(PAT_B);
-      if(mB){
-        const d=parsarData(mB[1]);if(d)dataAtual=d;
-        if(!dataAtual)return;
-        let desc=limpBr(mB[2]);
-        const neg=!!mB[4];const val=parsarValor(mB[5]);
-        if(!val||val<0.10||val>10000000)return;
-        const dLow=desc.toLowerCase();
-        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
-        lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+      if(!linha)return;
+      if(/^https?:\/\//.test(linha))return;
+      if(/^\d{2}\/\d{2}\/\d{4},/.test(linha))return;
+      const lLow=linha.toLowerCase();
+      if(IGBR.some(p=>lLow.includes(p)))return;
+
+      // Detecta cabeçalho
+      if(linha.includes('Data') && linha.includes('Histórico')){emDados=true;return;}
+
+      // Tipo de transação (linha isolada)
+      if(TIPOS_BR.some(t=>linha.trim()===t)){
+        tipoAtual=linha.trim();
         return;
       }
-      const mC=linha.match(PAT_C);
-      if(mC&&dataAtual){
-        let desc=limpBr(mC[1]);
-        const neg=!!mC[3];const val=parsarValor(mC[4]);
-        if(!val||val<0.10||val>10000000)return;
-        const dLow=desc.toLowerCase();
-        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
-        lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+
+      // Linha com data no início
+      const mD=linha.match(PAT_DATA_LINHA);
+      if(mD){
+        const d=parsarData(mD[1]);if(d)dataAtual=d;
+        linha=mD[2].trim();
+        emDados=true;
+      }
+      if(!emDados||!dataAtual)return;
+
+      // "DOCTO   VALOR   SALDO" (só docto+crédito+saldo) → crédito
+      const m3=linha.match(PAT_DOCTO_3);
+      if(m3){
+        const val=parsarValor(m3[2]);
+        if(val>0.10&&val<10000000){
+          // usa nome acumulado ou tipo
+          const desc=nomeProx||tipoAtual||'Lançamento';
+          if(!IGBR.some(p=>desc.toLowerCase().includes(p)))
+            lancamentos.push({data:dataAtual,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
+        }
+        nomeProx=null;tipoAtual=null;
+        return;
+      }
+
+      // "DOCTO   [-]VALOR [SALDO]"
+      const mDV=linha.match(PAT_DOCTO_VAL);
+      if(mDV){
+        const neg=!!mDV[2];
+        const val=parsarValor(mDV[3]);
+        if(val>0.10&&val<10000000){
+          const desc=nomeProx||tipoAtual||'Lançamento';
+          if(!IGBR.some(p=>desc.toLowerCase().includes(p)))
+            lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+        }
+        nomeProx=null;tipoAtual=null;
+        return;
+      }
+
+      // "DESC DOCTO [-]VALOR [SALDO]" — tudo numa linha
+      const mDD=linha.match(PAT_DESC_DOCTO);
+      if(mDD){
+        let desc=mDD[1].replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+        const neg=!!mDD[3];
+        const val=parsarValor(mDD[4]);
+        if(val>0.10&&val<10000000&&desc.length>1&&!IGBR.some(p=>desc.toLowerCase().includes(p)))
+          lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+        nomeProx=null;tipoAtual=null;
+        return;
+      }
+
+      // Linha de texto puro = nome do beneficiário (vem depois do tipo, antes do docto)
+      if(linha.length>2&&!/^\d/.test(linha)&&!IGBR.some(p=>lLow.includes(p))){
+        nomeProx=linha.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
       }
     });
   }
@@ -2068,9 +2138,7 @@ function parsearExtrato(texto,result,preview){
   });
 
   if(!filtrados.length){
-    // Mostra primeiras 40 linhas para debug
-    const debug=linhas.slice(0,40).map((l,i)=>`${i}: [${l}]`).join('\n');
-    result.innerHTML=`<div class="pdf-result" style="color:var(--amber);font-family:monospace;font-size:10px;white-space:pre-wrap;">⚠ Banco: <strong>${banco}</strong>\n\nLINHAS EXTRAÍDAS:\n${debug}</div>`;
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado. Banco detectado: <strong>${banco}</strong></div>`;
     preview.innerHTML='';return;
   }
 
