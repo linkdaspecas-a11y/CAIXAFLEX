@@ -387,6 +387,7 @@ tr:hover td{background:var(--surface2);}
   <div class="nav-item" id="n-transf" onclick="go('transferencia',this)"><span class="nav-icon">⇄</span> Transferência</div>
   <div class="nav-item" id="n-proj" onclick="go('projecao',this)"><span class="nav-icon">⟶</span> Projeção</div>
   <div class="nav-item" id="n-ext" onclick="go('extrato',this)"><span class="nav-icon">≡</span> Extrato</div>
+  <div class="nav-item" id="n-importarpdf" onclick="go('importarpdf',this)"><span class="nav-icon">⬆</span> Importar PDF</div>
   <div class="nav-item" id="n-cats" onclick="go('categorias',this)"><span class="nav-icon">⊞</span> Categorias</div>
 
   <div class="nav-divider"></div>
@@ -783,6 +784,18 @@ tr:hover td{background:var(--surface2);}
 </div>
 
 <!-- ══ IMPORTAR PDF ══ -->
+<!-- ══ IMPORTAR PDF ══ -->
+<div class="view" id="view-importarpdf">
+  <div class="page-header"><div><div class="page-title">Importar Extrato PDF</div><div class="page-sub">Jogue o PDF do banco — o sistema identifica entradas e saídas automaticamente</div></div></div>
+  <div class="pdf-drop" id="pdfDrop" onclick="document.getElementById('pdfInput').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handlePdfDrop(event)">
+    <input type="file" id="pdfInput" accept=".pdf" style="display:none" onchange="handlePdfFile(this.files[0])">
+    <div class="pdf-drop-icon">📄</div>
+    <div class="pdf-drop-text">Arraste o PDF do extrato bancário aqui<br><small>ou clique para selecionar · Itaú e Bradesco</small></div>
+  </div>
+  <div id="pdfResult"></div>
+  <div id="pdfPreview"></div>
+</div>
+
 <!-- ══ DRE ══ -->
 <div class="view" id="view-dre">
   <div class="page-header">
@@ -920,6 +933,7 @@ tr:hover td{background:var(--surface2);}
       <div class="mob-menu-item" onclick="mobGo('transferencia',null);toggleMobMenu()"><span class="mob-icon">⇄</span>Transferência</div>
       <div class="mob-menu-item" onclick="mobGo('projecao',null);toggleMobMenu()"><span class="mob-icon">⟶</span>Projeção</div>
       <div class="mob-menu-item" onclick="mobGo('dre',null);toggleMobMenu()"><span class="mob-icon">▦</span>DRE</div>
+      <div class="mob-menu-item" onclick="mobGo('importarpdf',null);toggleMobMenu()"><span class="mob-icon">⬆</span>Importar PDF</div>
       <div class="mob-menu-item" onclick="mobGo('categorias',null);toggleMobMenu()"><span class="mob-icon">⊞</span>Categorias</div>
     </div>
   </div>
@@ -1896,6 +1910,254 @@ function renderProdutos(){
 }
 
 // ══ IMPORTAR PDF ══
+// ══ IMPORTAR PDF ══
+function handlePdfDrop(e){e.preventDefault();document.getElementById('pdfDrop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handlePdfFile(f);}
+
+async function handlePdfFile(file){
+  if(!file)return;
+  const result=document.getElementById('pdfResult');
+  const preview=document.getElementById('pdfPreview');
+  result.innerHTML=`<div class="pdf-result">📄 <strong>${file.name}</strong> (${(file.size/1024).toFixed(1)} KB)<br><span style="color:var(--green)">⚙ Lendo o PDF...</span></div>`;
+  preview.innerHTML='';
+  try{
+    const arrayBuffer=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    let textoCompleto='';
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const content=await page.getTextContent();
+      const linhaMap={};
+      content.items.forEach(item=>{
+        const y=Math.round(item.transform[5]);
+        if(!linhaMap[y])linhaMap[y]=[];
+        linhaMap[y].push({x:item.transform[4],text:item.str});
+      });
+      Object.keys(linhaMap).sort((a,b)=>b-a).forEach(y=>{
+        textoCompleto+=linhaMap[y].sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ')+'\n';
+      });
+      textoCompleto+='---PAGINA---\n';
+    }
+    parsearExtrato(textoCompleto,result,preview);
+  }catch(err){
+    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro ao ler o PDF: ${err.message}</div>`;
+  }
+}
+
+function parsearExtrato(texto,result,preview){
+  const linhas=texto.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
+  const lancamentos=[];
+
+  // Detecta banco
+  const txtLow=texto.toLowerCase();
+  const isBradesco=txtLow.includes('bradesco')||txtLow.includes('internet banking');
+  const banco=isBradesco?'bradesco':'itau';
+
+  function parsarData(d){
+    const m=d.match(/^(\d{2})[\/-](\d{2})[\/-](\d{2,4})$/);
+    if(!m)return null;
+    const ano=m[3].length===2?'20'+m[3]:m[3];
+    return`${ano}-${m[2]}-${m[1]}`;
+  }
+  function parsarValor(v){
+    const neg=v.trim().startsWith('-');
+    const n=parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));
+    return isNaN(n)?0:neg?-n:n;
+  }
+  function sugerirCat(desc,tipo){
+    const d=(desc||'').toLowerCase();
+    if(tipo==='e'){
+      if(d.includes('pix recebido')||d.includes('ted recebida')||d.includes('boleto recebido'))return'Outras entradas';
+      return'Outras entradas';
+    }
+    if(d.includes('sispag salario')||d.includes('salários'))return'Mão de obra direta';
+    if(d.includes('enel')||d.includes('sabesp')||d.includes('eletropaulo'))return'Aluguel / energia';
+    if(d.includes('simples nacional')||d.includes('darf')||d.includes('gnre')||d.includes('dare'))return'Impostos/tributos';
+    if(d.includes('tar ')||d.includes('tarifa')||d.includes('plano adapt'))return'Outras saídas';
+    if(d.includes('sindicato'))return'Mão de obra direta';
+    return'Outras saídas';
+  }
+
+  // ── ITAÚ ──
+  if(banco==='itau'){
+    const ignorar=['saldo anterior','saldo total disponível','saldo movimentação','saldo aplic',
+      'limite da conta','lançamentos do período','data lançamentos','razão social','cnpj/cpf',
+      'aviso','atualizado em','em caso de dúvidas','reclamações','deficiente','ouvidoria',
+      'agência','---pagina---'];
+    function ignoraItau(l){const lo=l.toLowerCase();return ignorar.some(p=>lo.includes(p))||/^https?:\/\//.test(l)||/^\d+\/\d+$/.test(l)||/^\d{2}\/\d{2}\/\d{4},/.test(l);}
+
+    const patCompleta=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
+    let dataAtual=null;
+
+    linhas.forEach(linha=>{
+      if(ignoraItau(linha))return;
+      if(/^\d{2}\/\d{2}\/\d{4}$/.test(linha)){dataAtual=parsarData(linha);return;}
+      const mC=linha.match(patCompleta);
+      if(mC){
+        const data=parsarData(mC[1]);const desc=mC[2].trim();const val=parsarValor(mC[3]);
+        if(data&&Math.abs(val)>0.1&&Math.abs(val)<10000000&&!ignoraItau(desc)){
+          const tipo=val<0?'s':'e';
+          const dLow=desc.toLowerCase();
+          if(!dLow.includes('apl aplic aut')&&!dLow.includes('res aplic aut'))
+            lancamentos.push({data,desc,val:Math.abs(val),tipo,cat:sugerirCat(desc,tipo)});
+        }
+        dataAtual=null;return;
+      }
+      if(dataAtual){
+        const mV=linha.match(/^(.+?)\s+([-]?[\d\.]+,\d{2})$/);
+        if(mV){
+          const desc=mV[1].trim();const val=parsarValor(mV[2]);
+          if(Math.abs(val)>0.1&&Math.abs(val)<10000000&&!ignoraItau(desc)){
+            const dLow=desc.toLowerCase();
+            if(!dLow.includes('apl aplic aut')&&!dLow.includes('res aplic aut')){
+              const tipo=val<0?'s':'e';
+              lancamentos.push({data:dataAtual,desc,val:Math.abs(val),tipo,cat:sugerirCat(desc,tipo)});
+            }
+          }
+          dataAtual=null;
+        }
+      }
+    });
+  } else {
+    // ── BRADESCO ──
+    const IGBR=['saldo anterior','data histórico','total ','bradesco s/a','saldo invest',
+      'rent.inv','apl.invest fac','resg/vencto','resg.autom','rentab.invest',
+      'internet banking','fone fácil','sac ','ouvidoria','os dados acima',
+      'últimos lançamentos','nome:','extrato de','saldos invest','---pagina---'];
+    function limpBr(d){return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
+    const PAT_A=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})$/;
+    const PAT_A2=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([-]\s*[\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+    const PAT_B=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    const PAT_C=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    let dataAtual=null,emDados=false;
+    linhas.forEach(linha=>{
+      if(linha.includes('Data Histórico')){emDados=true;return;}
+      if(!emDados)return;
+      if(/^https?:\/\//.test(linha)||/total\s/i.test(linha)||linha.includes('Banco Bradesco'))return;
+      if(PAT_A.test(linha)){const m=linha.match(PAT_A);const d=parsarData(m[1]);if(d)dataAtual=d;return;}
+      if(PAT_A2.test(linha)){const m=linha.match(PAT_A2);const d=parsarData(m[1]);if(d)dataAtual=d;return;}
+      const mB=linha.match(PAT_B);
+      if(mB){
+        const d=parsarData(mB[1]);if(d)dataAtual=d;
+        if(!dataAtual)return;
+        let desc=limpBr(mB[2]);
+        const neg=!!mB[4];const val=parsarValor(mB[5]);
+        if(!val||val<0.10||val>10000000)return;
+        const dLow=desc.toLowerCase();
+        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
+        lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+        return;
+      }
+      const mC=linha.match(PAT_C);
+      if(mC&&dataAtual){
+        let desc=limpBr(mC[1]);
+        const neg=!!mC[3];const val=parsarValor(mC[4]);
+        if(!val||val<0.10||val>10000000)return;
+        const dLow=desc.toLowerCase();
+        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
+        lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
+      }
+    });
+  }
+
+  // Remove duplicatas
+  const vistos=new Set();
+  const filtrados=lancamentos.filter(l=>{
+    const k=`${l.data}|${l.val}|${l.tipo}|${l.desc.slice(0,15)}`;
+    if(vistos.has(k))return false;
+    vistos.add(k);return true;
+  });
+
+  if(!filtrados.length){
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado. Banco detectado: <strong>${banco}</strong></div>`;
+    preview.innerHTML='';return;
+  }
+
+  const entradas=filtrados.filter(l=>l.tipo==='e');
+  const saidas=filtrados.filter(l=>l.tipo==='s');
+  result.innerHTML=`<div class="pdf-result" style="color:var(--green)">
+    ✓ <strong>${filtrados.length} lançamento(s) — ${banco.toUpperCase()}</strong> ·
+    <span style="color:var(--green)">↑ ${entradas.length} entradas (${fmtDec(entradas.reduce((a,l)=>a+l.val,0))})</span> ·
+    <span style="color:var(--red)">↓ ${saidas.length} saídas (${fmtDec(saidas.reduce((a,l)=>a+l.val,0))})</span>
+  </div>`;
+
+  window._pdfLancs=filtrados;
+
+  preview.innerHTML=`<div class="card"><div class="card-header">
+    <div class="card-title">Lançamentos identificados</div>
+    <button class="btn btn-green" id="btnImportar" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
+  </div>
+  <table><thead><tr>
+    <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-imp').forEach(c=>c.checked=this.checked)"></th>
+    <th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th>Valor</th><th>Conta</th>
+  </tr></thead><tbody>
+  ${filtrados.map((l,i)=>`<tr>
+    <td><input type="checkbox" class="chk-imp" checked data-i="${i}"></td>
+    <td class="mono" style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
+    <td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
+    <td><select style="background:${l.tipo==='e'?'var(--green-dim)':'var(--red-dim)'};color:${l.tipo==='e'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;" id="imp-tipo-${i}" onchange="atualizarLinhaPdf(${i},this.value)">
+      <option value="e" ${l.tipo==='e'?'selected':''}>▲ Entrada</option>
+      <option value="s" ${l.tipo==='s'?'selected':''}>▼ Saída</option>
+    </select></td>
+    <td><select class="form-select" style="padding:3px 6px;font-size:11px;min-width:140px;" id="imp-cat-${i}" onchange="checarNovaCat(${i},this)">
+      ${[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===l.cat?'selected':''}>${c}</option>`).join('')}
+      <option value="__nova__">+ Nova categoria...</option>
+    </select></td>
+    <td class="${l.tipo==='e'?'val-pos':'val-neg'}" id="imp-val-${i}">${l.tipo==='e'?'+':'-'}${fmtDec(l.val)}</td>
+    <td><select class="form-select" style="padding:3px 6px;font-size:11px;width:90px;" id="imp-conta-${i}">
+      <option value="itau" ${banco==='itau'?'selected':''}>Itaú</option>
+      <option value="bradesco" ${banco==='bradesco'?'selected':''}>Bradesco</option>
+      <option value="caixa">Caixa</option>
+    </select></td>
+  </tr>`).join('')}
+  </tbody></table>
+  <div style="padding:14px 20px;border-top:1px solid var(--border);">
+    <button class="btn btn-green" onclick="importarSelecionados(window._pdfLancs)">↓ Importar selecionados</button>
+  </div></div>`;
+}
+
+function atualizarLinhaPdf(i,tipo){
+  window._pdfLancs[i].tipo=tipo;
+  const valEl=document.getElementById('imp-val-'+i);
+  const sel=document.getElementById('imp-tipo-'+i);
+  valEl.className=tipo==='e'?'val-pos':'val-neg';
+  valEl.textContent=(tipo==='e'?'+':'-')+fmtDec(window._pdfLancs[i].val);
+  sel.style.background=tipo==='e'?'var(--green-dim)':'var(--red-dim)';
+  sel.style.color=tipo==='e'?'var(--green)':'var(--red)';
+}
+function checarNovaCat(i,sel){
+  if(sel.value!=='__nova__')return;
+  const tipo=document.getElementById('imp-tipo-'+i).value;
+  const nome=prompt('Nome da nova categoria:');
+  if(!nome){sel.value=tipo==='e'?CATS_E[0]:CATS_S[0];return;}
+  if(tipo==='e'){if(!CATS_E.includes(nome))CATS_E.push(nome);}
+  else{if(!CATS_S.includes(nome))CATS_S.push(nome);}
+  saveCats();
+  document.querySelectorAll('[id^="imp-cat-"]').forEach(s=>{
+    const cur=s.value;
+    s.innerHTML=[...CATS_E,...CATS_S].map(c=>`<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('')+'<option value="__nova__">+ Nova categoria...</option>';
+  });
+  sel.value=nome;
+}
+async function importarSelecionados(lancs){
+  const checks=document.querySelectorAll('.chk-imp:checked');
+  if(!checks.length){alert('Nenhum lançamento selecionado.');return;}
+  document.querySelectorAll('[onclick*="importarSelecionados"]').forEach(b=>{b.disabled=true;b.textContent='⏳ Importando...';});
+  let count=0;
+  for(const chk of checks){
+    const i=parseInt(chk.dataset.i);const l=lancs[i];
+    const conta=document.getElementById('imp-conta-'+i).value;
+    const tipo=document.getElementById('imp-tipo-'+i)?.value||l.tipo;
+    const cat=document.getElementById('imp-cat-'+i)?.value||l.cat;
+    const{data:row,error}=await SB.from('cf3_lancamentos').insert({data:l.data,tipo,conta,cat,descricao:l.desc,val:l.val,ref:'Importado extrato'}).select().single();
+    if(!error){FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});count++;}
+  }
+  FC.sort((a,b)=>a.data.localeCompare(b.data));
+  updateAll();
+  document.getElementById('pdfPreview').innerHTML='';
+  document.getElementById('pdfResult').innerHTML=`<div class="pdf-result" style="color:var(--green)">✓ ${count} lançamento(s) importado(s)!</div>`;
+  document.getElementById('pdfInput').value='';
+}
+
 // ══ CATEGORIAS ══
 async function saveCats(){
   await SB.from('cf3_config').upsert({chave:'categorias',dados:JSON.stringify({e:CATS_E,s:CATS_S})},{onConflict:'chave'});
