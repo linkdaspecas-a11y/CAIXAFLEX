@@ -379,6 +379,7 @@ tr:hover td{background:var(--surface2);}
   <div class="nav-item" id="n-transf" onclick="go('transferencia',this)"><span class="nav-icon">⇄</span> Transferência</div>
   <div class="nav-item" id="n-proj" onclick="go('projecao',this)"><span class="nav-icon">⟶</span> Projeção</div>
   <div class="nav-item" id="n-ext" onclick="go('extrato',this)"><span class="nav-icon">≡</span> Extrato</div>
+  <div class="nav-item" id="n-importarpdf" onclick="go('importarpdf',this)"><span class="nav-icon">⬆</span> Importar PDF</div>
   <div class="nav-item" id="n-cats" onclick="go('categorias',this)"><span class="nav-icon">⊞</span> Categorias</div>
 
   <div class="nav-divider"></div>
@@ -775,6 +776,26 @@ tr:hover td{background:var(--surface2);}
 </div>
 
 
+<!-- ══ IMPORTAR PDF ══ -->
+<div class="view" id="view-importarpdf">
+  <div class="page-header"><div>
+    <div class="page-title">Importar Extrato PDF</div>
+    <div class="page-sub">A IA lê o PDF e identifica todos os lançamentos automaticamente</div>
+  </div></div>
+  <div id="pdfArea" onclick="document.getElementById('pdfFile').click()"
+    style="border:2px dashed var(--border2);border-radius:12px;padding:60px;text-align:center;cursor:pointer;transition:border-color .2s"
+    ondragover="event.preventDefault();this.style.borderColor='var(--green)'"
+    ondragleave="this.style.borderColor='var(--border2)'"
+    ondrop="event.preventDefault();this.style.borderColor='var(--border2)';lerPDF(event.dataTransfer.files[0])">
+    <input type="file" id="pdfFile" accept=".pdf" style="display:none" onchange="lerPDF(this.files[0])">
+    <div style="font-size:36px;opacity:.4">📄</div>
+    <div style="color:var(--muted);margin-top:8px;font-size:13px">Arraste o PDF aqui ou clique para selecionar</div>
+    <div style="color:var(--muted);font-size:11px;margin-top:4px">Itaú · Bradesco · qualquer banco</div>
+  </div>
+  <div id="pdfMsg" style="margin-top:16px"></div>
+  <div id="pdfTabela"></div>
+</div>
+
 <!-- ══ DRE ══ -->
 <div class="view" id="view-dre">
   <div class="page-header">
@@ -912,6 +933,7 @@ tr:hover td{background:var(--surface2);}
       <div class="mob-menu-item" onclick="mobGo('transferencia',null);toggleMobMenu()"><span class="mob-icon">⇄</span>Transferência</div>
       <div class="mob-menu-item" onclick="mobGo('projecao',null);toggleMobMenu()"><span class="mob-icon">⟶</span>Projeção</div>
       <div class="mob-menu-item" onclick="mobGo('dre',null);toggleMobMenu()"><span class="mob-icon">▦</span>DRE</div>
+      <div class="mob-menu-item" onclick="mobGo('importarpdf',null);toggleMobMenu()"><span class="mob-icon">⬆</span>Importar PDF</div>
       <div class="mob-menu-item" onclick="mobGo('categorias',null);toggleMobMenu()"><span class="mob-icon">⊞</span>Categorias</div>
     </div>
   </div>
@@ -1885,6 +1907,126 @@ function renderProdutos(){
   const el=document.getElementById('prodTable');
   if(!cats.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◉</div><div class="empty-text">Nenhuma receita lançada neste mês.</div></div>';return;}
   el.innerHTML=`<table><thead><tr><th>Categoria</th><th>Receita</th><th>% do total</th><th>Status</th></tr></thead><tbody>${cats.map(([cat,val])=>{const pct=totalRec?val/totalRec:0;const st=pct>0.4?'⭐ Principal':pct>0.2?'🟢 Relevante':'🟡 Secundária';return`<tr><td style="font-weight:500">${cat}</td><td class="val-pos">+${fmt(val)}</td><td class="mono" style="color:var(--muted)">${fmtPct(pct)}</td><td>${st}</td></tr>`;}).join('')}</tbody></table>`;
+}
+
+// ══ IMPORTAR PDF ══
+async function lerPDF(file){
+  if(!file)return;
+  const msg=document.getElementById('pdfMsg');
+  const tab=document.getElementById('pdfTabela');
+  msg.innerHTML='<span style="color:var(--green)">🤖 Enviando para a IA ler o PDF...</span>';
+  tab.innerHTML='';
+
+  try{
+    // Converte PDF para base64
+    const base64=await new Promise((res,rej)=>{
+      const r=new FileReader();
+      r.onload=()=>res(r.result.split(',')[1]);
+      r.onerror=()=>rej(new Error('Falha ao ler arquivo'));
+      r.readAsDataURL(file);
+    });
+
+    // Chama a API da Claude com o PDF
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:4000,
+        messages:[{
+          role:'user',
+          content:[
+            {
+              type:'document',
+              source:{type:'base64',media_type:'application/pdf',data:base64}
+            },
+            {
+              type:'text',
+              text:`Analise este extrato bancário e extraia TODAS as transações financeiras.
+Retorne SOMENTE um JSON válido, sem texto antes ou depois, no formato:
+[{"data":"YYYY-MM-DD","descricao":"nome da transação","valor":0.00,"tipo":"entrada ou saida"}]
+Regras:
+- data: formato YYYY-MM-DD (ano com 4 dígitos)
+- descricao: nome do beneficiário ou descrição da transação, sem "Rem:" ou "Des:"
+- valor: número positivo (ex: 1260.83)
+- tipo: "entrada" se crédito, "saida" se débito
+- Ignore: saldo anterior, saldos intermediários, aplicações automáticas, rendimentos
+- Inclua TODOS os lançamentos reais de crédito e débito`
+            }
+          ]
+        }]
+      })
+    });
+
+    const data=await resp.json();
+    if(!resp.ok)throw new Error(data.error?.message||'Erro na API');
+
+    const txt=data.content[0].text;
+    const clean=txt.replace(/```json|```/g,'').trim();
+    const lancs=JSON.parse(clean);
+
+    if(!lancs.length){msg.innerHTML='<span style="color:var(--amber)">⚠ Nenhum lançamento encontrado.</span>';return;}
+
+    const ent=lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
+    const sai=lancs.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
+    msg.innerHTML=`<div style="color:var(--green);margin-bottom:12px">✓ <strong>${lancs.length} lançamentos</strong> · ↑${fmtDec(ent)} · ↓${fmtDec(sai)}</div>`;
+    window._pdfLancs=lancs;
+
+    tab.innerHTML=`<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div class="card-title">Lançamentos identificados pela IA</div>
+      <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
+    </div>
+    <table><thead><tr>
+      <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-pdf').forEach(c=>c.checked=this.checked)"></th>
+      <th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Conta</th>
+    </tr></thead><tbody>
+    ${lancs.map((l,i)=>`<tr>
+      <td><input type="checkbox" class="chk-pdf" data-i="${i}" checked></td>
+      <td style="font-size:11px;color:var(--muted)">${fmtDFull(l.data)}</td>
+      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.descricao}">${l.descricao}</td>
+      <td><select id="pt-${i}" style="background:${l.tipo==='entrada'?'var(--green-dim)':'var(--red-dim)'};color:${l.tipo==='entrada'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">
+        <option value="e"${l.tipo==='entrada'?' selected':''}>▲ Entrada</option>
+        <option value="s"${l.tipo==='saida'?' selected':''}>▼ Saída</option>
+      </select></td>
+      <td class="${l.tipo==='entrada'?'val-pos':'val-neg'}">${l.tipo==='entrada'?'+':'-'}${fmtDec(l.valor)}</td>
+      <td><select id="pc-${i}" style="font-size:11px;padding:3px 6px">
+        <option value="bradesco">Bradesco</option>
+        <option value="itau">Itaú</option>
+        <option value="caixa">Caixa</option>
+      </select></td>
+    </tr>`).join('')}
+    </tbody></table>
+    <div style="padding:14px 20px;border-top:1px solid var(--border)">
+      <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
+    </div></div>`;
+
+  }catch(e){
+    msg.innerHTML=`<span style="color:var(--red)">❌ Erro: ${e.message}</span>`;
+    console.error(e);
+  }
+}
+
+async function _importarPDF(){
+  const checks=document.querySelectorAll('.chk-pdf:checked');
+  if(!checks.length){alert('Selecione ao menos um lançamento.');return;}
+  document.querySelectorAll('[onclick="_importarPDF()"]').forEach(b=>{b.disabled=true;b.textContent='⏳ Importando...';});
+  let n=0;
+  for(const chk of checks){
+    const i=parseInt(chk.dataset.i);
+    const l=window._pdfLancs[i];
+    const tipo=document.getElementById('pt-'+i).value;
+    const conta=document.getElementById('pc-'+i).value;
+    const cat=tipo==='e'?(CATS_E[0]||'Outras entradas'):(CATS_S[0]||'Outras saídas');
+    const{data:row,error}=await SB.from('cf3_lancamentos').insert({
+      data:l.data,tipo,conta,cat,descricao:l.descricao,val:l.valor,ref:'Extrato PDF'
+    }).select().single();
+    if(!error){FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});n++;}
+  }
+  FC.sort((a,b)=>a.data.localeCompare(b.data));
+  updateAll();
+  document.getElementById('pdfMsg').innerHTML=`<span style="color:var(--green)">✓ ${n} lançamento(s) importado(s)!</span>`;
+  document.getElementById('pdfTabela').innerHTML='';
+  document.getElementById('pdfFile').value='';
 }
 
 // ══ CATEGORIAS ══
