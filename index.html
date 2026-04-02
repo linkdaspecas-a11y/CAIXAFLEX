@@ -2068,7 +2068,9 @@ function parsearExtrato(texto,result,preview){
   });
 
   if(!filtrados.length){
-    result.innerHTML=`<div class="pdf-result" style="color:var(--amber)">⚠ Nenhum lançamento identificado. Banco detectado: <strong>${banco}</strong></div>`;
+    // Mostra primeiras 40 linhas para debug
+    const debug=linhas.slice(0,40).map((l,i)=>`${i}: [${l}]`).join('\n');
+    result.innerHTML=`<div class="pdf-result" style="color:var(--amber);font-family:monospace;font-size:10px;white-space:pre-wrap;">⚠ Banco: <strong>${banco}</strong>\n\nLINHAS EXTRAÍDAS:\n${debug}</div>`;
     preview.innerHTML='';return;
   }
 
