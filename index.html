@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CaixaOmega — Sistema Financeiro</title>
+<title>VisaoCaixa — Sistema Financeiro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -335,7 +335,7 @@ tr:hover td{background:var(--surface2);}
 <!-- LOGIN -->
 <div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">CaixaOmega</div>
+    <div class="login-logo">VisaoCaixa</div>
     <div class="login-sub">Sistema Financeiro · Fábrica de Borracha</div>
     <label class="login-label">Senha de acesso</label>
     <input type="password" class="login-input" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter')fazerLogin()">
@@ -348,7 +348,7 @@ tr:hover td{background:var(--surface2);}
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <div class="logo"><div class="logo-dot"></div>CaixaOmega</div>
+  <div class="logo"><div class="logo-dot"></div>VisaoCaixa</div>
   <div class="topbar-sub">Fábrica de Peças Automotivas de Borracha</div>
   <div class="topbar-right">
     <div class="ver-badge">v4</div>
@@ -1991,41 +1991,67 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    // Bradesco: formato com colunas Docto + Credito/Debito separadas
-    // Linha: DESC  DOCTO(7+dig)  VALOR  (crédito, sem sinal)
-    // Linha: DESC  DOCTO(7+dig)  - VALOR  (débito, com -)
+    // Bradesco PDF.js extrai numa linha: "DESC DOCTO [-]VALOR [SALDO]"
+    // Docto pode ter 4-10 dígitos (ex: 0000564, 6152274)
+    // Crédito = sem "-", Débito = com "- "
     let dataAtual=null;
-    const PAT=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+
+    // Padrão principal: qualquer texto + docto(4+dig) + [-]valor
+    const PAT=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Só docto + valor (sem descrição)
     const PAT_D=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+
     const SKIP=['rent.inv','apl.invest','resg/vencto','resgate inv fac','saldo invest',
-      'resg.autom','rentab.invest','data histórico','total','bradesco','https',
-      'fone fácil','sac ','ouvidoria','os dados','últimos','nome:','extrato de',
-      '---pagina---'];
-    function skipBr(l){const lo=l.toLowerCase();return SKIP.some(p=>lo.includes(p))||/^\d+\/\d+$/.test(l)||/^\d{2}\/\d{2}\/\d{4},/.test(l);}
+      'resg.autom','rentab.invest','data histórico','total ','bradesco','https',
+      'fone fácil','sac ','ouvidoria','os dados','últimos lançamentos','nome:',
+      'extrato de','---pagina---','saldo anterior','internet banking'];
+
+    function skipBr(l){
+      const lo=l.toLowerCase();
+      return SKIP.some(p=>lo.includes(p))||
+        /^\d+\/\d+$/.test(l)||
+        /^\d{2}\/\d{2}\/\d{4},/.test(l)||
+        l.length<3;
+    }
 
     linhas.forEach(linha=>{
       if(skipBr(linha))return;
+
+      // Detecta data DD/MM/AA no início
       const mD=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
-      if(mD){const d=parsarData(mD[1]);if(d)dataAtual=d;linha=mD[2].trim();}
+      if(mD){
+        const d=parsarData(mD[1]);
+        if(d)dataAtual=d;
+        linha=mD[2].trim();
+      }
       if(!dataAtual)return;
+
+      // Tenta padrão principal
       const m=linha.match(PAT);
       if(m){
         let desc=(m[1]||'').trim();
-        const neg=!!(m[3]);const val=parsarValor(m[4]);
+        const neg=!!(m[3]);
+        const val=parsarValor(m[4]);
         if(!val||val<0.05||val>10000000)return;
+
+        // Limpa prefixos e data no final
         desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-        if(!desc||desc.length<2)return;
         if(skipBr(desc))return;
+        if(!desc||desc.length<2)return;
+
         const tipo=neg?'s':'e';
         lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
         return;
       }
+
+      // Só docto + valor
       const m2=linha.match(PAT_D);
       if(m2){
-        const val=parsarValor(m2[3]);const neg=!!(m2[2]);
+        const val=parsarValor(m2[3]);
+        const neg=!!(m2[2]);
         if(val<1)return;
         const tipo=neg?'s':'e';
-        lancamentos.push({data:dataAtual,desc:'Lançamento Bradesco',val,tipo,cat:sugerirCat('',tipo)});
+        lancamentos.push({data:dataAtual,desc:'Lançamento',val,tipo,cat:sugerirCat('',tipo)});
       }
     });
   } else {
