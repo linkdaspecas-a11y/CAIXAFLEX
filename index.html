@@ -989,7 +989,7 @@ let filterCPAtual='todas',filterCRAtual='todas',filterCheqAtual='todos';
 let chContas=null,chES=null,chProj=null,chEvo=null,chMarg=null,chProd=null;
 
 // ══ LOGIN ══
-const SENHA='20984533';
+const SENHA_HASH='25ded35264d8c372feb7de16f46e734fdf9340d8d61223ef65998a80848aa359';
 
 // ══ MOBILE NAV ══
 function mobGo(id,el){
@@ -1001,9 +1001,11 @@ function mobGo(id,el){
 function toggleMobMenu(){
   document.getElementById('mob-menu').classList.toggle('open');
 }
-function fazerLogin(){
+async function fazerLogin(){
   const s=document.getElementById('login-senha').value;
-  if(s===SENHA){sessionStorage.setItem('cf4_auth','1');document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='grid';init();}
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  const hash=Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  if(hash===SENHA_HASH){sessionStorage.setItem('cf4_auth','1');document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='grid';init();}
   else{document.getElementById('login-erro').textContent='Senha incorreta.';document.getElementById('login-senha').value='';}
 }
 if(sessionStorage.getItem('cf4_auth')==='1'){document.getElementById('login-screen').style.display='none';document.getElementById('app').style.display='grid';}
