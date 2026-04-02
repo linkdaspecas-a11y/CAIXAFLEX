@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VisaoCaixa — Sistema Financeiro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1919,6 +1918,11 @@ async function lerPDF(file){
   msg.innerHTML='<span style="color:var(--green)">⚙ Lendo o PDF...</span>';
   tab.innerHTML='';
   try{
+    // Cria worker via blob para não depender de CDN externa
+    if(!pdfjsLib.GlobalWorkerOptions.workerSrc){
+      const workerUrl='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjsLib.GlobalWorkerOptions.workerSrc=workerUrl;
+    }
     const buf=await file.arrayBuffer();
     const pdf=await pdfjsLib.getDocument({data:buf,disableFontFace:true}).promise;
     let texto='';
@@ -1937,7 +1941,10 @@ async function lerPDF(file){
       });
     }
     const isItau=texto.toLowerCase().includes('itaú')||texto.toLowerCase().includes('banco itau');
+    console.log('BANCO:',isItau?'ITAU':'BRADESCO');
+    console.log('PRIMEIRAS 50 LINHAS:\n'+texto.split('\n').slice(0,50).join('\n'));
     const lancs=isItau?_parseItau(texto):_parseBradesco(texto);
+    console.log('LANCAMENTOS ENCONTRADOS:',lancs.length);
     if(!lancs.length){msg.innerHTML='<span style="color:var(--amber)">⚠ Nenhum lançamento encontrado.</span>';return;}
     const ent=lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
     const sai=lancs.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
@@ -1979,16 +1986,18 @@ async function lerPDF(file){
 
 function _parseItau(txt){
   const lancs=[];
-  const IGN=['saldo anterior','saldo total','saldo aplic','limite da conta','lançamentos do período','ouvidoria','agência'];
+  function _pD(d){const p=d.split('/');if(p.length<3)return null;const y=p[2].length===2?'20'+p[2]:p[2];return`${y}-${p[1]}-${p[0]}`;}
+  function _pV(v){return parseFloat((v||'').replace(/\./g,'').replace(',','.'))||0;}
+  const IGN=['saldo anterior','saldo total','saldo aplic','limite da conta','lançamentos do período','ouvidoria','agência','---pagina---'];
   function ok(l){const lo=l.toLowerCase();return!IGN.some(p=>lo.includes(p))&&!/^https?:\/\//.test(l)&&!/^\d+\/\d+$/.test(l);}
   const PAT=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
   let dt=null;
   txt.split('\n').forEach(linha=>{
     linha=linha.trim();if(!linha||!ok(linha))return;
-    if(/^\d{2}\/\d{2}\/\d{4}$/.test(linha)){dt=parsarData(linha);return;}
+    if(/^\d{2}\/\d{2}\/\d{4}$/.test(linha)){dt=_pD(linha);return;}
     const m=linha.match(PAT);
     if(m){
-      const d=parsarData(m[1]),desc=m[2].trim(),val=parsarValor(m[3]);
+      const d=_pD(m[1]),desc=m[2].trim(),val=_pV(m[3]);
       if(d&&Math.abs(val)>0.1&&ok(desc)){
         const dlo=desc.toLowerCase();
         if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
@@ -1999,7 +2008,7 @@ function _parseItau(txt){
     if(dt){
       const m2=linha.match(/^(.+?)\s+([-]?[\d\.]+,\d{2})$/);
       if(m2){
-        const desc=m2[1].trim(),val=parsarValor(m2[2]);
+        const desc=m2[1].trim(),val=_pV(m2[2]);
         if(Math.abs(val)>0.1&&ok(desc)){
           const dlo=desc.toLowerCase();
           if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
@@ -2013,40 +2022,63 @@ function _parseItau(txt){
 }
 
 function _parseBradesco(txt){
+  // Mesma lógica do Itaú, adaptada para o Bradesco
+  // Bradesco: data no formato DD/MM/AA (2 dígitos no ano)
+  // Débito: valor negativo OU sinal "-" colado ao docto
   const lancs=[];
-  const IGN=['total ','saldo anterior','data histórico','data   histórico','saldo invest',
-    'rent.inv','apl.invest','resg/vencto','rentab.invest','resg.autom','resgate inv fac',
-    'os dados','saldos invest','fone fácil','sac ','ouvidoria','se preferir',
-    'demais regiões','capitais e regiões','internet banking','nome:','extrato de',
-    'bradesco internet','02/04/2026'];
-  function ign(l){const lo=(l||'').toLowerCase();return!l||lo.length<2||/^https?:\/\//.test(lo)||/^\d+\/\d+$/.test(lo)||IGN.some(p=>lo.includes(p));}
-  function limp(d){return(d||'').replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
-  function pV(v){return parseFloat((v||'').replace(/\./g,'').replace(',','.'));}
-  // DÉBITO: [DATA ] DESC DOCTO- VALOR [SALDO]
-  const RD=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-  // CRÉDITO com saldo: [DATA ] DESC DOCTO VALOR SALDO
-  const RC=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-  // CRÉDITO sem saldo: [DATA ] DESC DOCTO VALOR
-  const RC2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
-  // Só data+docto+val+saldo sem desc = interno
-  const RS=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-  let dt=null;
-  function add(data,desc,val,neg){
-    if(!data||!desc||desc.length<2||val<0.05||val>10000000)return;
-    if(ign(desc))return;
-    if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc.trim()))return;
-    desc=limp(desc);
-    if(!desc||desc.length<2)return;
-    lancs.push({data,descricao:desc,valor:val,tipo:neg?'saida':'entrada'});
+  function _pD(d){
+    const p=(d||'').trim().split('/');
+    if(p.length<3)return null;
+    const y=p[2].length===2?'20'+p[2]:p[2];
+    return`${y}-${p[1]}-${p[0]}`;
   }
+  function _pV(v){return parseFloat((v||'').replace(/\./g,'').replace(',','.'))||0;}
+
+  const IGN=['saldo anterior','data histórico','data   histórico','total ','saldo invest',
+    'rent.inv','apl.invest','resg/vencto','rentab.invest','resg.autom','resgate inv fac',
+    'resgate invest facil','resg.autom.invest','saldos invest','os dados',
+    'fone fácil','sac ','ouvidoria','se preferir','internet banking',
+    'nome:','extrato de','bradesco internet','---pagina---'];
+
+  function ok(l){
+    const lo=(l||'').toLowerCase();
+    if(!lo||lo.length<2)return false;
+    if(/^https?:\/\//.test(lo))return false;
+    if(/^\d+\/\d+$/.test(lo))return false;
+    if(/^\d{2}\/\d{2}\/\d{4},/.test(lo))return false;
+    return!IGN.some(p=>lo.includes(p));
+  }
+
+  // Padrão igual ao Itaú mas com data DD/MM/AA (2 dígitos)
+  // Linha: [DD/MM/AA ] DESC [-]VALOR
+  const PAT=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+([-]?[\d\.]+,\d{2})(?:\s+[\d\.,]+)?$/;
+  let dt=null;
+
   txt.split('\n').forEach(linha=>{
     linha=linha.trim();
-    if(ign(linha))return;
+    if(!linha||!ok(linha))return;
     if(linha.includes('Data')&&(linha.includes('Histórico')||linha.includes('Docto')))return;
-    let m=linha.match(RS);if(m){dt=parsarData(m[1]);return;}
-    m=linha.match(RD);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),true);return;}
-    m=linha.match(RC);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);return;}
-    m=linha.match(RC2);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);}
+
+    // Linha só com data
+    if(/^\d{2}\/\d{2}\/\d{2}$/.test(linha)){dt=_pD(linha);return;}
+
+    const m=linha.match(PAT);
+    if(!m)return;
+
+    // Atualiza data se presente
+    if(m[1])dt=_pD(m[1]);
+    if(!dt)return;
+
+    const desc=(m[2]||'').replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    const val=_pV(m[3]);
+
+    if(!desc||desc.length<2)return;
+    if(!ok(desc))return;
+    if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc))return;
+    if(Math.abs(val)<0.05||Math.abs(val)>10000000)return;
+
+    const neg=val<0||m[3].includes('-');
+    lancs.push({data:dt,descricao:desc,valor:Math.abs(val),tipo:neg?'saida':'entrada'});
   });
   return lancs;
 }
