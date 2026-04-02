@@ -1991,10 +1991,6 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    // Parser Bradesco — baseado no formato real do PDF extraído
-    // Cada linha tem: [DD/MM/AA] [DESC] DOCTO [-]VALOR [SALDO]
-    // Crédito = sem "-", Débito = com "- " antes do valor
-
     const IGBR=['saldo anterior','data histórico','total ','bradesco s/a',
       'saldo invest','rent.inv','apl.invest fac','resg/vencto','resgate inv fac',
       'resg.autom','rentab.invest','internet banking','fone fácil','sac ',
@@ -2003,7 +1999,7 @@ function parsearExtrato(texto,result,preview){
 
     function skipBr(l){
       const lo=l.toLowerCase().trim();
-      if(!lo||lo.length<3)return true;
+      if(!lo||lo.length<2)return true;
       if(/^https?:\/\//.test(lo))return true;
       if(/^\d{2}\/\d{2}\/\d{4},/.test(lo))return true;
       if(/^\d+\/\d+$/.test(lo))return true;
@@ -2014,8 +2010,12 @@ function parsearExtrato(texto,result,preview){
       return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
     }
 
-    // Regex: [DATA] [DESC] DOCTO(4+) [-]VALOR [SALDO]
-    const PAT_BR=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.*?)\s*(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Linha tipo A: DATA DOCTO VALOR SALDO → só atualiza data, sem lançamento
+    const PAT_DATA_DOCTO=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+[\d\.]+,\d{2}(?:\s+[\-\d\.,]+)?$/;
+    // Linha tipo B: DATA DESC DOCTO [-]VALOR [SALDO]
+    const PAT_COM_DATA=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Linha tipo C: DESC DOCTO [-]VALOR [SALDO] (sem data)
+    const PAT_SEM_DATA=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
 
     let dataAtual=null;
     let emDados=false;
@@ -2025,33 +2025,40 @@ function parsearExtrato(texto,result,preview){
       if(!emDados)return;
       if(skipBr(linha))return;
 
-      const m=linha.match(PAT_BR);
-      if(!m)return;
-
-      const[,dataStr,descRaw,docto,negStr,valStr]=m;
-
-      // Atualiza data se presente na linha
-      if(dataStr){const d=parsarData(dataStr);if(d)dataAtual=d;}
-      if(!dataAtual)return;
-
-      const val=parsarValor(valStr);
-      if(!val||val<0.10||val>10000000)return;
-
-      // Verifica se descRaw é uma data (linhas como "06/01/26 6152274 3.219,70")
-      let desc=limpBr(descRaw||'');
-      if(/^\d{2}\/\d{2}\/\d{2}$/.test(desc)){
-        // A "desc" era uma data nova — atualiza e ignora como desc
-        const novaData=parsarData(desc);
-        if(novaData)dataAtual=novaData;
-        desc='';
+      // Tipo A: "02/01/26 6152274 6.780,30 6.781,30" → só data, sem lançamento
+      if(PAT_DATA_DOCTO.test(linha)){
+        const mA=linha.match(PAT_DATA_DOCTO);
+        const d=parsarData(mA[1]);if(d)dataAtual=d;
+        return;
       }
 
-      if(skipBr(desc))return;
-      if(!desc||desc.length<2)desc='Lançamento';
+      // Tipo B: "02/01/26 Segura Comercio 0927480 1.286,00"
+      const mB=linha.match(PAT_COM_DATA);
+      if(mB){
+        const d=parsarData(mB[1]);if(d)dataAtual=d;
+        if(!dataAtual)return;
+        let desc=limpBr(mB[2]);
+        const neg=!!mB[4];
+        const val=parsarValor(mB[5]);
+        if(!val||val<0.10||val>10000000)return;
+        if(skipBr(desc)||!desc||desc.length<2)return;
+        const tipo=neg?'s':'e';
+        lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+        return;
+      }
 
-      const neg=!!negStr;
-      const tipo=neg?'s':'e';
-      lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+      // Tipo C: "Escola do Lucas 0000564 - 1.260,83"
+      const mC=linha.match(PAT_SEM_DATA);
+      if(mC){
+        if(!dataAtual)return;
+        let desc=limpBr(mC[1]);
+        const neg=!!mC[3];
+        const val=parsarValor(mC[4]);
+        if(!val||val<0.10||val>10000000)return;
+        if(skipBr(desc)||!desc||desc.length<2)return;
+        const tipo=neg?'s':'e';
+        lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+      }
     });
   } else {
     // ── ITAÚ e genérico ──
