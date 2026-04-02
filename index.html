@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VisaoCaixa — Sistema Financeiro</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -381,7 +379,6 @@ tr:hover td{background:var(--surface2);}
   <div class="nav-item" id="n-transf" onclick="go('transferencia',this)"><span class="nav-icon">⇄</span> Transferência</div>
   <div class="nav-item" id="n-proj" onclick="go('projecao',this)"><span class="nav-icon">⟶</span> Projeção</div>
   <div class="nav-item" id="n-ext" onclick="go('extrato',this)"><span class="nav-icon">≡</span> Extrato</div>
-  <div class="nav-item" id="n-importarpdf" onclick="go('importarpdf',this)"><span class="nav-icon">⬆</span> Importar PDF</div>
   <div class="nav-item" id="n-cats" onclick="go('categorias',this)"><span class="nav-icon">⊞</span> Categorias</div>
 
   <div class="nav-divider"></div>
@@ -778,25 +775,6 @@ tr:hover td{background:var(--surface2);}
 </div>
 
 
-<!-- ══ IMPORTAR PDF ══ -->
-<div class="view" id="view-importarpdf">
-  <div class="page-header"><div>
-    <div class="page-title">Importar Extrato PDF</div>
-    <div class="page-sub">Itaú e Bradesco</div>
-  </div></div>
-  <div id="pdfArea" onclick="document.getElementById('pdfFile').click()"
-    style="border:2px dashed var(--border2);border-radius:12px;padding:60px;text-align:center;cursor:pointer;margin-bottom:20px;transition:border-color .2s"
-    ondragover="event.preventDefault();this.style.borderColor='var(--green)'"
-    ondragleave="this.style.borderColor='var(--border2)'"
-    ondrop="event.preventDefault();this.style.borderColor='var(--border2)';lerPDF(event.dataTransfer.files[0])">
-    <input type="file" id="pdfFile" accept=".pdf" style="display:none" onchange="lerPDF(this.files[0])">
-    <div style="font-size:36px;opacity:.4">📄</div>
-    <div style="color:var(--muted);margin-top:8px;font-size:13px">Arraste o PDF aqui ou clique para selecionar</div>
-  </div>
-  <div id="pdfMsg"></div>
-  <div id="pdfTabela"></div>
-</div>
-
 <!-- ══ DRE ══ -->
 <div class="view" id="view-dre">
   <div class="page-header">
@@ -934,7 +912,6 @@ tr:hover td{background:var(--surface2);}
       <div class="mob-menu-item" onclick="mobGo('transferencia',null);toggleMobMenu()"><span class="mob-icon">⇄</span>Transferência</div>
       <div class="mob-menu-item" onclick="mobGo('projecao',null);toggleMobMenu()"><span class="mob-icon">⟶</span>Projeção</div>
       <div class="mob-menu-item" onclick="mobGo('dre',null);toggleMobMenu()"><span class="mob-icon">▦</span>DRE</div>
-      <div class="mob-menu-item" onclick="mobGo('importarpdf',null);toggleMobMenu()"><span class="mob-icon">⬆</span>Importar PDF</div>
       <div class="mob-menu-item" onclick="mobGo('categorias',null);toggleMobMenu()"><span class="mob-icon">⊞</span>Categorias</div>
     </div>
   </div>
@@ -1908,169 +1885,6 @@ function renderProdutos(){
   const el=document.getElementById('prodTable');
   if(!cats.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">◉</div><div class="empty-text">Nenhuma receita lançada neste mês.</div></div>';return;}
   el.innerHTML=`<table><thead><tr><th>Categoria</th><th>Receita</th><th>% do total</th><th>Status</th></tr></thead><tbody>${cats.map(([cat,val])=>{const pct=totalRec?val/totalRec:0;const st=pct>0.4?'⭐ Principal':pct>0.2?'🟢 Relevante':'🟡 Secundária';return`<tr><td style="font-weight:500">${cat}</td><td class="val-pos">+${fmt(val)}</td><td class="mono" style="color:var(--muted)">${fmtPct(pct)}</td><td>${st}</td></tr>`;}).join('')}</tbody></table>`;
-}
-
-// ══ IMPORTAR PDF ══
-async function lerPDF(file){
-  if(!file)return;
-  const msg=document.getElementById('pdfMsg');
-  const tab=document.getElementById('pdfTabela');
-  msg.innerHTML='<span style="color:var(--green)">⚙ Lendo o PDF...</span>';
-  tab.innerHTML='';
-  try{
-    const buf=await file.arrayBuffer();
-    const pdf=await pdfjsLib.getDocument({data:buf,disableFontFace:true}).promise;
-    let texto='';
-    for(let i=1;i<=pdf.numPages;i++){
-      const pg=await pdf.getPage(i);
-      const ct=await pg.getTextContent();
-      const ys={};
-      ct.items.forEach(it=>{
-        const y=Math.round(it.transform[5]);
-        if(!ys[y])ys[y]=[];
-        ys[y].push({x:it.transform[4],s:it.str});
-      });
-      Object.keys(ys).map(Number).sort((a,b)=>b-a).forEach(y=>{
-        const l=ys[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').trim();
-        if(l)texto+=l+'\n';
-      });
-    }
-    const isItau=texto.toLowerCase().includes('itaú')||texto.toLowerCase().includes('banco itau');
-    const lancs=isItau?_parseItau(texto):_parseBradesco(texto);
-    if(!lancs.length){msg.innerHTML='<span style="color:var(--amber)">⚠ Nenhum lançamento encontrado.</span>';return;}
-    const ent=lancs.filter(l=>l.t==='e').reduce((s,l)=>s+l.v,0);
-    const sai=lancs.filter(l=>l.t==='s').reduce((s,l)=>s+l.v,0);
-    msg.innerHTML=`<div style="color:var(--green);margin-bottom:12px">✓ <strong>${lancs.length} lançamentos — ${isItau?'ITAÚ':'BRADESCO'}</strong> · ↑${fmtDec(ent)} · ↓${fmtDec(sai)}</div>`;
-    window._pdfLancs=lancs;
-    window._pdfIsItau=isItau;
-    tab.innerHTML=`<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-      <div class="card-title">Lançamentos identificados</div>
-      <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
-    </div>
-    <table><thead><tr>
-      <th><input type="checkbox" checked onchange="document.querySelectorAll('.chk-pdf').forEach(c=>c.checked=this.checked)"></th>
-      <th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Conta</th>
-    </tr></thead><tbody>
-    ${lancs.map((l,i)=>`<tr>
-      <td><input type="checkbox" class="chk-pdf" data-i="${i}" checked></td>
-      <td style="font-size:11px;color:var(--muted)">${fmtDFull(l.d)}</td>
-      <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.desc}">${l.desc}</td>
-      <td><select id="pt-${i}" style="background:${l.t==='e'?'var(--green-dim)':'var(--red-dim)'};color:${l.t==='e'?'var(--green)':'var(--red)'};border:none;border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600">
-        <option value="e"${l.t==='e'?' selected':''}>▲ Entrada</option>
-        <option value="s"${l.t==='s'?' selected':''}>▼ Saída</option>
-      </select></td>
-      <td class="${l.t==='e'?'val-pos':'val-neg'}">${l.t==='e'?'+':'-'}${fmtDec(l.v)}</td>
-      <td><select id="pc-${i}" style="font-size:11px;padding:3px 6px">
-        <option value="itau"${isItau?' selected':''}>Itaú</option>
-        <option value="bradesco"${!isItau?' selected':''}>Bradesco</option>
-        <option value="caixa">Caixa</option>
-      </select></td>
-    </tr>`).join('')}
-    </tbody></table>
-    <div style="padding:14px 20px;border-top:1px solid var(--border)">
-      <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
-    </div></div>`;
-  }catch(e){
-    msg.innerHTML=`<span style="color:var(--red)">❌ Erro: ${e.message}</span>`;
-    console.error(e);
-  }
-}
-
-function _parseItau(txt){
-  const lancs=[];
-  const IGN=['saldo anterior','saldo total','saldo aplic','limite da conta','lançamentos do período','ouvidoria','agência'];
-  function ok(l){const lo=l.toLowerCase();return!IGN.some(p=>lo.includes(p))&&!/^https?:\/\//.test(l)&&!/^\d+\/\d+$/.test(l);}
-  const PAT=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
-  let dt=null;
-  txt.split('\n').forEach(linha=>{
-    linha=linha.trim();if(!linha||!ok(linha))return;
-    if(/^\d{2}\/\d{2}\/\d{4}$/.test(linha)){dt=parsarData(linha);return;}
-    const m=linha.match(PAT);
-    if(m){
-      const d=parsarData(m[1]),desc=m[2].trim(),val=parsarValor(m[3]);
-      if(d&&Math.abs(val)>0.1&&ok(desc)){
-        const dlo=desc.toLowerCase();
-        if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
-          lancs.push({d,desc,v:Math.abs(val),t:val<0?'s':'e'});
-      }
-      dt=null;return;
-    }
-    if(dt){
-      const m2=linha.match(/^(.+?)\s+([-]?[\d\.]+,\d{2})$/);
-      if(m2){
-        const desc=m2[1].trim(),val=parsarValor(m2[2]);
-        if(Math.abs(val)>0.1&&ok(desc)){
-          const dlo=desc.toLowerCase();
-          if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
-            lancs.push({d:dt,desc,v:Math.abs(val),t:val<0?'s':'e'});
-        }
-        dt=null;
-      }
-    }
-  });
-  return lancs;
-}
-
-function _parseBradesco(txt){
-  const lancs=[];
-  const IGN=['total ','saldo anterior','data histórico','data   histórico','saldo invest',
-    'rent.inv','apl.invest','resg/vencto','rentab.invest','resg.autom','resgate inv fac',
-    'os dados','saldos invest','fone fácil','sac ','ouvidoria','se preferir',
-    'demais regiões','capitais e regiões','internet banking','nome:','extrato de',
-    'bradesco internet','02/04/2026'];
-  function ign(l){const lo=(l||'').toLowerCase();return!l||lo.length<2||/^https?:\/\//.test(lo)||/^\d+\/\d+$/.test(lo)||IGN.some(p=>lo.includes(p));}
-  function limp(d){return(d||'').replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
-  function pV(v){return parseFloat((v||'').replace(/\./g,'').replace(',','.'));}
-  // DÉBITO: [DATA ] DESC DOCTO- VALOR [SALDO]
-  const RD=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-  // CRÉDITO com saldo: [DATA ] DESC DOCTO VALOR SALDO
-  const RC=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-  // CRÉDITO sem saldo: [DATA ] DESC DOCTO VALOR
-  const RC2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
-  // Interno (só data+docto+val+saldo sem desc)
-  const RS=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-  let dt=null;
-  function add(data,desc,val,neg){
-    if(!data||!desc||desc.length<2||val<0.05||val>10000000)return;
-    if(ign(desc))return;
-    if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc.trim()))return;
-    desc=limp(desc);
-    if(!desc||desc.length<2)return;
-    lancs.push({d:data,desc,v:val,t:neg?'s':'e'});
-  }
-  txt.split('\n').forEach(linha=>{
-    linha=linha.trim();
-    if(ign(linha))return;
-    if(linha.includes('Data')&&(linha.includes('Histórico')||linha.includes('Docto')))return;
-    let m=linha.match(RS);if(m){dt=parsarData(m[1]);return;}
-    m=linha.match(RD);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),true);return;}
-    m=linha.match(RC);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);return;}
-    m=linha.match(RC2);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);}
-  });
-  return lancs;
-}
-
-async function _importarPDF(){
-  const checks=document.querySelectorAll('.chk-pdf:checked');
-  if(!checks.length){alert('Selecione ao menos um lançamento.');return;}
-  document.querySelectorAll('[onclick="_importarPDF()"]').forEach(b=>{b.disabled=true;b.textContent='⏳ Importando...';});
-  let n=0;
-  for(const chk of checks){
-    const i=parseInt(chk.dataset.i);
-    const l=window._pdfLancs[i];
-    const tipo=document.getElementById('pt-'+i).value;
-    const conta=document.getElementById('pc-'+i).value;
-    const cat=tipo==='e'?(CATS_E[0]||'Outras entradas'):(CATS_S[0]||'Outras saídas');
-    const{data:row,error}=await SB.from('cf3_lancamentos').insert({
-      data:l.d,tipo,conta,cat,descricao:l.desc,val:l.v,ref:'Extrato PDF'
-    }).select().single();
-    if(!error){FC.push({id:row.id,data:row.data,tipo:row.tipo,conta:row.conta,cat:row.cat,descricao:row.descricao,val:Number(row.val),ref:row.ref});n++;}
-  }
-  FC.sort((a,b)=>a.data.localeCompare(b.data));
-  updateAll();
-  document.getElementById('pdfMsg').innerHTML=`<span style="color:var(--green)">✓ ${n} lançamento(s) importado(s)!</span>`;
-  document.getElementById('pdfTabela').innerHTML='';
-  document.getElementById('pdfFile').value='';
 }
 
 // ══ CATEGORIAS ══
