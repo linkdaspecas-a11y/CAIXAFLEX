@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VisaoCaixa — Sistema Financeiro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -1914,66 +1916,36 @@ async function lerPDF(file){
   if(!file)return;
   const msg=document.getElementById('pdfMsg');
   const tab=document.getElementById('pdfTabela');
-  msg.innerHTML='<span style="color:var(--green)">🤖 Enviando para a IA ler o PDF...</span>';
+  msg.innerHTML='<span style="color:var(--green)">⚙ Lendo o PDF...</span>';
   tab.innerHTML='';
-
   try{
-    // Converte PDF para base64
-    const base64=await new Promise((res,rej)=>{
-      const r=new FileReader();
-      r.onload=()=>res(r.result.split(',')[1]);
-      r.onerror=()=>rej(new Error('Falha ao ler arquivo'));
-      r.readAsDataURL(file);
-    });
-
-    // Chama a API da Claude com o PDF
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:4000,
-        messages:[{
-          role:'user',
-          content:[
-            {
-              type:'document',
-              source:{type:'base64',media_type:'application/pdf',data:base64}
-            },
-            {
-              type:'text',
-              text:`Analise este extrato bancário e extraia TODAS as transações financeiras.
-Retorne SOMENTE um JSON válido, sem texto antes ou depois, no formato:
-[{"data":"YYYY-MM-DD","descricao":"nome da transação","valor":0.00,"tipo":"entrada ou saida"}]
-Regras:
-- data: formato YYYY-MM-DD (ano com 4 dígitos)
-- descricao: nome do beneficiário ou descrição da transação, sem "Rem:" ou "Des:"
-- valor: número positivo (ex: 1260.83)
-- tipo: "entrada" se crédito, "saida" se débito
-- Ignore: saldo anterior, saldos intermediários, aplicações automáticas, rendimentos
-- Inclua TODOS os lançamentos reais de crédito e débito`
-            }
-          ]
-        }]
-      })
-    });
-
-    const data=await resp.json();
-    if(!resp.ok)throw new Error(data.error?.message||'Erro na API');
-
-    const txt=data.content[0].text;
-    const clean=txt.replace(/```json|```/g,'').trim();
-    const lancs=JSON.parse(clean);
-
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf,disableFontFace:true}).promise;
+    let texto='';
+    for(let i=1;i<=pdf.numPages;i++){
+      const pg=await pdf.getPage(i);
+      const ct=await pg.getTextContent();
+      const ys={};
+      ct.items.forEach(it=>{
+        const y=Math.round(it.transform[5]);
+        if(!ys[y])ys[y]=[];
+        ys[y].push({x:it.transform[4],s:it.str});
+      });
+      Object.keys(ys).map(Number).sort((a,b)=>b-a).forEach(y=>{
+        const l=ys[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').trim();
+        if(l)texto+=l+'\n';
+      });
+    }
+    const isItau=texto.toLowerCase().includes('itaú')||texto.toLowerCase().includes('banco itau');
+    const lancs=isItau?_parseItau(texto):_parseBradesco(texto);
     if(!lancs.length){msg.innerHTML='<span style="color:var(--amber)">⚠ Nenhum lançamento encontrado.</span>';return;}
-
     const ent=lancs.filter(l=>l.tipo==='entrada').reduce((s,l)=>s+l.valor,0);
     const sai=lancs.filter(l=>l.tipo==='saida').reduce((s,l)=>s+l.valor,0);
-    msg.innerHTML=`<div style="color:var(--green);margin-bottom:12px">✓ <strong>${lancs.length} lançamentos</strong> · ↑${fmtDec(ent)} · ↓${fmtDec(sai)}</div>`;
+    msg.innerHTML=`<div style="color:var(--green);margin-bottom:12px">✓ <strong>${lancs.length} lançamentos — ${isItau?'ITAÚ':'BRADESCO'}</strong> · ↑${fmtDec(ent)} · ↓${fmtDec(sai)}</div>`;
     window._pdfLancs=lancs;
-
+    window._pdfIsItau=isItau;
     tab.innerHTML=`<div class="card"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-      <div class="card-title">Lançamentos identificados pela IA</div>
+      <div class="card-title">Lançamentos identificados</div>
       <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
     </div>
     <table><thead><tr>
@@ -1990,8 +1962,8 @@ Regras:
       </select></td>
       <td class="${l.tipo==='entrada'?'val-pos':'val-neg'}">${l.tipo==='entrada'?'+':'-'}${fmtDec(l.valor)}</td>
       <td><select id="pc-${i}" style="font-size:11px;padding:3px 6px">
-        <option value="bradesco">Bradesco</option>
-        <option value="itau">Itaú</option>
+        <option value="itau"${isItau?' selected':''}>Itaú</option>
+        <option value="bradesco"${!isItau?' selected':''}>Bradesco</option>
         <option value="caixa">Caixa</option>
       </select></td>
     </tr>`).join('')}
@@ -1999,11 +1971,84 @@ Regras:
     <div style="padding:14px 20px;border-top:1px solid var(--border)">
       <button class="btn btn-green" onclick="_importarPDF()">↓ Importar selecionados</button>
     </div></div>`;
-
   }catch(e){
     msg.innerHTML=`<span style="color:var(--red)">❌ Erro: ${e.message}</span>`;
     console.error(e);
   }
+}
+
+function _parseItau(txt){
+  const lancs=[];
+  const IGN=['saldo anterior','saldo total','saldo aplic','limite da conta','lançamentos do período','ouvidoria','agência'];
+  function ok(l){const lo=l.toLowerCase();return!IGN.some(p=>lo.includes(p))&&!/^https?:\/\//.test(l)&&!/^\d+\/\d+$/.test(l);}
+  const PAT=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
+  let dt=null;
+  txt.split('\n').forEach(linha=>{
+    linha=linha.trim();if(!linha||!ok(linha))return;
+    if(/^\d{2}\/\d{2}\/\d{4}$/.test(linha)){dt=parsarData(linha);return;}
+    const m=linha.match(PAT);
+    if(m){
+      const d=parsarData(m[1]),desc=m[2].trim(),val=parsarValor(m[3]);
+      if(d&&Math.abs(val)>0.1&&ok(desc)){
+        const dlo=desc.toLowerCase();
+        if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
+          lancs.push({data:d,descricao:desc,valor:Math.abs(val),tipo:val<0?'saida':'entrada'});
+      }
+      dt=null;return;
+    }
+    if(dt){
+      const m2=linha.match(/^(.+?)\s+([-]?[\d\.]+,\d{2})$/);
+      if(m2){
+        const desc=m2[1].trim(),val=parsarValor(m2[2]);
+        if(Math.abs(val)>0.1&&ok(desc)){
+          const dlo=desc.toLowerCase();
+          if(!dlo.includes('apl aplic')&&!dlo.includes('res aplic'))
+            lancs.push({data:dt,descricao:desc,valor:Math.abs(val),tipo:val<0?'saida':'entrada'});
+        }
+        dt=null;
+      }
+    }
+  });
+  return lancs;
+}
+
+function _parseBradesco(txt){
+  const lancs=[];
+  const IGN=['total ','saldo anterior','data histórico','data   histórico','saldo invest',
+    'rent.inv','apl.invest','resg/vencto','rentab.invest','resg.autom','resgate inv fac',
+    'os dados','saldos invest','fone fácil','sac ','ouvidoria','se preferir',
+    'demais regiões','capitais e regiões','internet banking','nome:','extrato de',
+    'bradesco internet','02/04/2026'];
+  function ign(l){const lo=(l||'').toLowerCase();return!l||lo.length<2||/^https?:\/\//.test(lo)||/^\d+\/\d+$/.test(lo)||IGN.some(p=>lo.includes(p));}
+  function limp(d){return(d||'').replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();}
+  function pV(v){return parseFloat((v||'').replace(/\./g,'').replace(',','.'));}
+  // DÉBITO: [DATA ] DESC DOCTO- VALOR [SALDO]
+  const RD=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+  // CRÉDITO com saldo: [DATA ] DESC DOCTO VALOR SALDO
+  const RC=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+  // CRÉDITO sem saldo: [DATA ] DESC DOCTO VALOR
+  const RC2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
+  // Só data+docto+val+saldo sem desc = interno
+  const RS=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+  let dt=null;
+  function add(data,desc,val,neg){
+    if(!data||!desc||desc.length<2||val<0.05||val>10000000)return;
+    if(ign(desc))return;
+    if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc.trim()))return;
+    desc=limp(desc);
+    if(!desc||desc.length<2)return;
+    lancs.push({data,descricao:desc,valor:val,tipo:neg?'saida':'entrada'});
+  }
+  txt.split('\n').forEach(linha=>{
+    linha=linha.trim();
+    if(ign(linha))return;
+    if(linha.includes('Data')&&(linha.includes('Histórico')||linha.includes('Docto')))return;
+    let m=linha.match(RS);if(m){dt=parsarData(m[1]);return;}
+    m=linha.match(RD);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),true);return;}
+    m=linha.match(RC);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);return;}
+    m=linha.match(RC2);if(m){if(m[1])dt=parsarData(m[1]);add(dt,m[2],pV(m[4]),false);}
+  });
+  return lancs;
 }
 
 async function _importarPDF(){
