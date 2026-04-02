@@ -1989,85 +1989,69 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    // Formato Bradesco: colunas Crédito e Débito separadas
-    // Linha de dado: DD/MM/AA  HISTORICO  DOCTO  CREDITO  DEBITO  SALDO
-    // ou linha sem data (continuação do histórico anterior)
-    let dataAtual=null;
-    let descAtual=null;
+    // Formato real extraído pelo PDF.js:
+    // "02/01/26 6152274 6.780,30 6.781,30"          → data docto credito saldo
+    // "Rem: Segura Comercio de pe 02/01 0927480 1.286,00"  → desc docto credito
+    // "Escola do Lucas 0000564 - 1.260,83"           → desc docto - debito
+    // "6388129 - 2.000,00"                           → docto - debito (sem desc)
+    // Padrão: linha com docto (7 dígitos) + valor com ou sem "-"
 
-    // Padrão com data no início
-    const patBradesco=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{7,})\s+([\d\.]+,\d{2})?\s+([\d\.,]+,\d{2})?\s+([\d\.,\-]+,\d{2})?$/;
-    // Padrão linha sem data mas com docto e valores
-    const patSemData=/^(.+?)\s+(\d{7,})\s+([\d\.]+,\d{2})?\s+([\-\d\.]+,\d{2})?\s+([\d\.,\-]+,\d{2})?$/;
-    // Padrão simplificado: detecta linhas com 2 valores monetários
-    const patValores=/^(.+?)\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})\s+([\d\.,\-]+,\d{2})?$/;
+    let dataAtual=null;
+
+    // Ignora essas descrições do Bradesco
+    const ignoraBradesco=['saldo anterior','saldo invest','rent.inv','apl.invest','resg/vencto','resgate inv','total ','data histórico','crédito (r$)','débito (r$)','saldo (r$)','bradesco internet','fone fácil','sac -','ouvidoria','os dados acima','últimos lançamentos','ag:','conta:','entre ','02/04/2026'];
+
+    function deveIgnorarBradesco(l){
+      const lo=l.toLowerCase();
+      return ignoraBradesco.some(p=>lo.includes(p))||/^https?:\/\//.test(l)||/^\d+\/\d+$/.test(l)||lo.startsWith('nome:');
+    }
+
+    // Regex principal: DESCRICAO  DOCTO(7dig)  [- ]VALOR
+    const patLinha=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\d\.,]+)?$/;
+    // Linha só com data no início: "05/01/26 DESC DOCTO VALOR"
+    const patComData=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
+    // Linha só com docto e valor (sem desc): "6388133 - 1.000,00"
+    const patSoDocto=/^(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\d\.,]+)?$/;
 
     linhas.forEach(linha=>{
-      if(deveIgnorar(linha))return;
+      if(deveIgnorarBradesco(linha))return;
 
-      // Tenta detectar data no início
-      const mData=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
+      // Extrai data se presente no início
+      const mData=linha.match(patComData);
       if(mData){
-        dataAtual=parsarData(mData[1]);
-        linha=mData[2];
+        const d=parsarData(mData[1]);
+        if(d)dataAtual=d;
+        linha=mData[2].trim();
       }
       if(!dataAtual)return;
 
-      // Procura por padrão: TEXTO  DOCTO  CREDITO  DEBITO
-      // Credito em azul = positivo, Debito com - = negativo
-      // Tenta: linha com dois números no final
-      const nums=linha.match(/([\d\.]+,\d{2})/g);
-      if(!nums||nums.length<1)return;
+      // Tenta padrão com docto
+      let m=linha.match(patLinha);
+      if(!m)m=linha.match(patSoDocto)?
+        [null,'',linha.match(patSoDocto)[1],linha.match(patSoDocto)[2],linha.match(patSoDocto)[3]]:null;
 
-      // Pega descrição (tudo antes dos números)
-      const ultimoNum=linha.lastIndexOf(nums[nums.length-1]);
-      let desc=linha.substring(0,ultimoNum).trim();
-      // Remove docto (sequência de 7+ dígitos)
-      desc=desc.replace(/\s+\d{7,}\s*$/,'').trim();
-      // Remove sublinhas de rem/des
-      desc=desc.replace(/^(Rem:|Des:)\s*/i,'').trim();
-      if(!desc||desc.length<3)return;
+      if(m){
+        let desc=(m[1]||'').trim();
+        const temMenos=!!(m[3]);
+        const val=parsarValor(m[4]);
+        if(!val||val<0.1||val>10000000)return;
 
-      // Determina crédito ou débito
-      // No Bradesco: valores negativos têm - na frente
-      let credito=0,debito=0;
-      nums.forEach(n=>{
-        const idx=linha.indexOf(n);
-        const antes=linha.substring(0,idx);
-        const val=parsarValor(n);
-        if(antes.includes('-')||linha.substring(idx-2,idx).trim()==='-')debito=val;
-        else if(credito===0&&debito===0)credito=val;
-      });
+        // Limpa descrição
+        desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
 
-      // Heurística melhor: verificar se a linha original tem o valor em posição de crédito
-      // O Bradesco exporta: valor grande perto do meio = crédito, valor com - = débito
-      const temMenos=linha.includes('- ')||/-\s*[\d\.]+,\d{2}/.test(linha);
-      if(temMenos){
-        const mDeb=linha.match(/[-]\s*([\d\.]+,\d{2})/);
-        if(mDeb)debito=parsarValor(mDeb[1]);
-        const mCred=linha.match(/^[^-]*?([\d\.]+,\d{2})/);
-        if(mCred&&parsarValor(mCred[1])!==debito)credito=parsarValor(mCred[1]);
-      } else {
-        // Sem sinal negativo — pode ser crédito ou saldo
-        if(nums.length>=2){
-          credito=parsarValor(nums[0]);
-        } else {
-          credito=parsarValor(nums[0]);
-        }
-      }
+        // Ignora linhas de controle interno
+        const dLow=desc.toLowerCase();
+        if(dLow.includes('saldo invest')||dLow.includes('rent.inv')||dLow.includes('apl.invest')||
+           dLow.includes('resg/vencto')||dLow.includes('resgate inv fac')||
+           (!desc&&temMenos))return; // docto puro sem desc = saque ATM já capturado
 
-      // Filtra: ignora aplicações/resgates internos e saldo
-      const dLow=desc.toLowerCase();
-      if(dLow.includes('saldo invest')||dLow.includes('apl.invest')||dLow.includes('rent.inv'))return;
+        // Se desc vazia mas tem valor → usa tipo da linha anterior
+        if(!desc)desc='Lançamento Bradesco';
 
-      if(credito>0.1&&credito<10000000){
-        lancamentos.push({data:dataAtual,desc,val:credito,tipo:'e',cat:sugerirCat(desc,'e')});
-      }
-      if(debito>0.1&&debito<10000000){
-        lancamentos.push({data:dataAtual,desc,val:debito,tipo:'s',cat:sugerirCat(desc,'s')});
+        const tipo=temMenos?'s':'e';
+        lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
       }
     });
-
   } else {
     // ── ITAÚ e genérico ──
     const patCompleta=/^(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+([-]?[\d\.]+,\d{2})$/;
