@@ -2018,117 +2018,112 @@ function parsearExtrato(texto,result,preview){
       }
     });
   } else {
-    // ── BRADESCO ──
-    // PDF.js extrai colunas separadas em linhas diferentes:
-    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30"
-    // "Transfe Pix"  ← tipo (linha separada)
-    // "0927480   1.286,00"  ← só docto + crédito
-    // "Rem: Segura Comercio de pe 02/01"  ← descrição
-    // "Pagto Cobranca"  ← tipo
-    // "0000564   - 1.260,83"  ← docto + débito
-    // "Escola do Lucas"  ← nome
-    // "Transf Autoriz"  ← tipo
-    // "0636931   - 4.334,40   1,00"  ← docto + débito + saldo
+    // ══ BRADESCO — baseado no formato REAL do PDF.js (debug confirmado) ══
+    // PDF.js extrai assim (diferente do pypdf):
+    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30" ← data+desc+docto+cred+saldo
+    // "Transfe Pix"         ← tipo isolado
+    // "0927480   1.286,00"  ← docto + crédito
+    // "Rem: Segura Comercio de pe 02/01" ← descrição isolada
+    // "Pagto Cobranca"      ← tipo
+    // "0000564   - 1.260,83" ← docto + débito
+    // "Escola do Lucas"     ← nome
+    // "05/01/26   2720284   600,00   601,00" ← data+docto+cred+saldo (sem desc)
+    // "Vilse Jorge Camargo" ← nome (linha após)
 
-    const IGBR=['saldo anterior','data histórico','total ','bradesco s/a','saldo invest',
-      'rent.inv','apl.invest','resg/vencto','resg.autom','rentab.invest',
+    const SKIP_BR=['saldo anterior','data   histórico','data histórico','total ','bradesco s/a',
+      'saldo invest','rent.inv','apl.invest','resg/vencto','resg.autom','rentab.invest',
       'internet banking','fone fácil','sac ','ouvidoria','os dados acima',
-      'últimos lançamentos','nome:','extrato de','saldos invest'];
-
-    // Padrão 1: DATA + conteúdo na mesma linha
-    // "02/01/26   Resgate Inv Fac 6152274   6.780,30   6.781,30"
-    const PAT_DATA_LINHA=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
-    // Padrão 2: só DOCTO + [-]VALOR [SALDO]
-    // "0927480   1.286,00" ou "0000564   - 1.260,83"
-    const PAT_DOCTO_VAL=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // Padrão 3: DESC + DOCTO + [-]VALOR [SALDO] (tudo numa linha)
-    // "Escola do Lucas 0000564 - 1.260,83"
-    const PAT_DESC_DOCTO=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // Padrão 4: DOCTO + VALOR + SALDO (crédito, 3 valores)
-    // "0927480   1.286,00   5.000,00"
-    const PAT_DOCTO_3=/^(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+      'últimos lançamentos','nome:','extrato de','saldos invest',
+      'capitais e regiões','demais regiões','atendimento 24','cancelamento',
+      'consulta de saldo','se preferir'];
 
     const TIPOS_BR=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul',
-      'Pagto Cobranca','Pagto Eletron','Saque Din Atm','Saque Dinheiro Atm',
-      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix','Ted Recebido'];
+      'Pagto Cobranca','Pagto Eletron Cobranca','Pagto Eletron',
+      'Saque Din Atm','Saque Dinheiro Atm','Apl.invest Fac',
+      'Resgate Inv Fac','Resg/vencto Cdb','Rent.inv.facil',
+      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix',
+      'Resg.autom.invest Facil','Rentab.invest Facilcred'];
 
-    let dataAtual=null;
-    let nomeProx=null; // nome que vem DEPOIS do tipo e ANTES do docto+valor
-    let tipoAtual=null;
-    let emDados=false;
+    function skipBr(l){
+      if(!l||l.length<2)return true;
+      const lo=l.toLowerCase();
+      if(/^https?:\/\//.test(l))return true;
+      if(/^\d+\/\d+$/.test(l))return true;
+      if(/^\d{2}\/\d{2}\/\d{4},/.test(l))return true;
+      return SKIP_BR.some(p=>lo.includes(p));
+    }
+
+    function limpar(d){
+      return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    }
+
+    // "DATA   qualquer coisa" → extrai data e retorna o resto
+    const R_DATA=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
+    // "DESC DOCTO [-]VALOR [SALDO]" — tudo junto
+    const R_FULL=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // "DOCTO [-]VALOR [SALDO]" — sem desc
+    const R_DOCV=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+
+    let dataAtual=null, descBuf='', emDados=false;
+
+    function salvar(desc, neg, val){
+      if(!dataAtual||val<0.10||val>10000000)return;
+      desc=desc.trim()||'Lançamento';
+      if(skipBr(desc))return;
+      const tipo=neg?'s':'e';
+      lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+      descBuf='';
+    }
 
     linhas.forEach(linha=>{
-      if(!linha)return;
-      if(/^https?:\/\//.test(linha))return;
-      if(/^\d{2}\/\d{2}\/\d{4},/.test(linha))return;
-      const lLow=linha.toLowerCase();
-      if(IGBR.some(p=>lLow.includes(p)))return;
+      if(skipBr(linha))return;
+      if(linha.includes('Data')&&linha.includes('Histórico')){emDados=true;return;}
+      if(!emDados)return;
 
-      // Detecta cabeçalho
-      if(linha.includes('Data') && linha.includes('Histórico')){emDados=true;return;}
-
-      // Tipo de transação (linha isolada)
-      if(TIPOS_BR.some(t=>linha.trim()===t)){
-        tipoAtual=linha.trim();
-        return;
-      }
-
-      // Linha com data no início
-      const mD=linha.match(PAT_DATA_LINHA);
+      // Extrai data se presente no início
+      const mD=linha.match(R_DATA);
       if(mD){
-        const d=parsarData(mD[1]);if(d)dataAtual=d;
+        const d=parsarData(mD[1]);
+        if(d)dataAtual=d;
         linha=mD[2].trim();
-        emDados=true;
+        if(!linha)return;
       }
-      if(!emDados||!dataAtual)return;
+      if(!dataAtual)return;
 
-      // "DOCTO   VALOR   SALDO" (só docto+crédito+saldo) → crédito
-      const m3=linha.match(PAT_DOCTO_3);
-      if(m3){
-        const val=parsarValor(m3[2]);
-        if(val>0.10&&val<10000000){
-          // usa nome acumulado ou tipo
-          const desc=nomeProx||tipoAtual||'Lançamento';
-          if(!IGBR.some(p=>desc.toLowerCase().includes(p)))
-            lancamentos.push({data:dataAtual,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
-        }
-        nomeProx=null;tipoAtual=null;
+      // Tipo isolado → vira descrição
+      if(TIPOS_BR.includes(linha.trim())){
+        descBuf=descBuf?descBuf+' '+linha.trim():linha.trim();
         return;
       }
 
-      // "DOCTO   [-]VALOR [SALDO]"
-      const mDV=linha.match(PAT_DOCTO_VAL);
+      // "DESC DOCTO [-]VALOR" — lança direto
+      const mF=linha.match(R_FULL);
+      if(mF){
+        const desc=limpar(mF[1]);
+        const neg=!!mF[3];
+        const val=parsarValor(mF[4]);
+        // Se tem desc no buffer, combina
+        const descFinal=descBuf?limpar(descBuf)+' · '+desc:desc;
+        salvar(descFinal,neg,val);
+        return;
+      }
+
+      // "DOCTO [-]VALOR" — usa desc do buffer
+      const mDV=linha.match(R_DOCV);
       if(mDV){
         const neg=!!mDV[2];
         const val=parsarValor(mDV[3]);
-        if(val>0.10&&val<10000000){
-          const desc=nomeProx||tipoAtual||'Lançamento';
-          if(!IGBR.some(p=>desc.toLowerCase().includes(p)))
-            lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
-        }
-        nomeProx=null;tipoAtual=null;
+        salvar(descBuf||'Lançamento',neg,val);
         return;
       }
 
-      // "DESC DOCTO [-]VALOR [SALDO]" — tudo numa linha
-      const mDD=linha.match(PAT_DESC_DOCTO);
-      if(mDD){
-        let desc=mDD[1].replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-        const neg=!!mDD[3];
-        const val=parsarValor(mDD[4]);
-        if(val>0.10&&val<10000000&&desc.length>1&&!IGBR.some(p=>desc.toLowerCase().includes(p)))
-          lancamentos.push({data:dataAtual,desc,val,tipo:neg?'s':'e',cat:sugerirCat(desc,neg?'s':'e')});
-        nomeProx=null;tipoAtual=null;
-        return;
-      }
-
-      // Linha de texto puro = nome do beneficiário (vem depois do tipo, antes do docto)
-      if(linha.length>2&&!/^\d/.test(linha)&&!IGBR.some(p=>lLow.includes(p))){
-        nomeProx=linha.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+      // Texto puro → acumula como descrição
+      const txt=limpar(linha);
+      if(txt.length>1&&!skipBr(txt)){
+        descBuf=descBuf?descBuf+' '+txt:txt;
       }
     });
   }
-
   // Remove duplicatas
   const vistos=new Set();
   const filtrados=lancamentos.filter(l=>{
