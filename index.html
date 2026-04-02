@@ -1992,7 +1992,7 @@ function parsearExtrato(texto,result,preview){
 
   if(banco==='bradesco'){
     const IGBR=['saldo anterior','data histórico','total ','bradesco s/a',
-      'saldo invest','rent.inv','apl.invest fac','resg/vencto','resgate inv fac',
+      'saldo invest','rent.inv','apl.invest fac','resg/vencto',
       'resg.autom','rentab.invest','internet banking','fone fácil','sac ',
       'ouvidoria','os dados acima','últimos lançamentos','nome:','extrato de',
       'saldos invest','---pagina---'];
@@ -2010,12 +2010,14 @@ function parsearExtrato(texto,result,preview){
       return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
     }
 
-    // Linha tipo A: DATA DOCTO VALOR SALDO → só atualiza data, sem lançamento
-    const PAT_DATA_DOCTO=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+[\d\.]+,\d{2}(?:\s+[\-\d\.,]+)?$/;
-    // Linha tipo B: DATA DESC DOCTO [-]VALOR [SALDO]
-    const PAT_COM_DATA=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // Linha tipo C: DESC DOCTO [-]VALOR [SALDO] (sem data)
-    const PAT_SEM_DATA=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Tipo A: "02/01/26 6152274 6.780,30 6.781,30" → data + docto + valor + saldo (sem desc real)
+    const PAT_A=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\d\.]+,\d{2})$/;
+    // Tipo A2: "02/01/26 6152274 - 1.260,83 1,00" → data + docto + debito + saldo
+    const PAT_A2=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([-]\s*[\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+    // Tipo B: "02/01/26 Segura Comercio 0927480 1.286,00" → data + desc + docto + valor
+    const PAT_B=/^(\d{2}\/\d{2}\/\d{2})\s+(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Tipo C: "Escola do Lucas 0000564 - 1.260,83" → desc + docto + valor (sem data)
+    const PAT_C=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
 
     let dataAtual=null;
     let emDados=false;
@@ -2023,17 +2025,22 @@ function parsearExtrato(texto,result,preview){
     linhas.forEach(linha=>{
       if(linha.includes('Data Histórico')){emDados=true;return;}
       if(!emDados)return;
-      if(skipBr(linha))return;
+      if(/^https?:\/\//.test(linha)||/total\s/i.test(linha)||linha.includes('Banco Bradesco'))return;
 
-      // Tipo A: "02/01/26 6152274 6.780,30 6.781,30" → só data, sem lançamento
-      if(PAT_DATA_DOCTO.test(linha)){
-        const mA=linha.match(PAT_DATA_DOCTO);
+      // Tipo A: linha só com data + docto + credito + saldo → atualiza data, sem lançamento
+      if(PAT_A.test(linha)){
+        const mA=linha.match(PAT_A);
         const d=parsarData(mA[1]);if(d)dataAtual=d;
         return;
       }
+      if(PAT_A2.test(linha)){
+        const mA2=linha.match(PAT_A2);
+        const d=parsarData(mA2[1]);if(d)dataAtual=d;
+        return;
+      }
 
-      // Tipo B: "02/01/26 Segura Comercio 0927480 1.286,00"
-      const mB=linha.match(PAT_COM_DATA);
+      // Tipo B: data + desc + docto + valor
+      const mB=linha.match(PAT_B);
       if(mB){
         const d=parsarData(mB[1]);if(d)dataAtual=d;
         if(!dataAtual)return;
@@ -2041,21 +2048,23 @@ function parsearExtrato(texto,result,preview){
         const neg=!!mB[4];
         const val=parsarValor(mB[5]);
         if(!val||val<0.10||val>10000000)return;
-        if(skipBr(desc)||!desc||desc.length<2)return;
+        const dLow=desc.toLowerCase();
+        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
         const tipo=neg?'s':'e';
         lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
         return;
       }
 
-      // Tipo C: "Escola do Lucas 0000564 - 1.260,83"
-      const mC=linha.match(PAT_SEM_DATA);
+      // Tipo C: desc + docto + valor (herda data)
+      const mC=linha.match(PAT_C);
       if(mC){
         if(!dataAtual)return;
         let desc=limpBr(mC[1]);
         const neg=!!mC[3];
         const val=parsarValor(mC[4]);
         if(!val||val<0.10||val>10000000)return;
-        if(skipBr(desc)||!desc||desc.length<2)return;
+        const dLow=desc.toLowerCase();
+        if(IGBR.some(p=>dLow.includes(p))||!desc||desc.length<2)return;
         const tipo=neg?'s':'e';
         lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
       }
