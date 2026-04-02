@@ -1920,28 +1920,34 @@ async function handlePdfFile(file){
   preview.innerHTML='';
   try{
     const arrayBuffer=await file.arrayBuffer();
-    const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise;
-    let textoCompleto='';
+    const loadTask=pdfjsLib.getDocument({
+      data:arrayBuffer,
+      disableFontFace:true,
+      disableRange:true,
+      disableStream:true
+    });
+    const pdf=await loadTask.promise;
+    let texto='';
     for(let p=1;p<=pdf.numPages;p++){
       const page=await pdf.getPage(p);
-      const content=await page.getTextContent();
-      // Agrupa itens por linha (Y), ordena por X, junta com espaço
-      const grupos={};
-      content.items.forEach(item=>{
-        const y=Math.round(item.transform[5]);
-        if(!grupos[y])grupos[y]=[];
-        grupos[y].push({x:item.transform[4],t:item.str.trim()});
+      const content=await page.getTextContent({normalizeWhitespace:true});
+      // Agrupa por Y, ordena por X
+      const map={};
+      content.items.forEach(it=>{
+        const y=Math.round(it.transform[5]);
+        if(!map[y])map[y]=[];
+        map[y].push({x:it.transform[4],s:it.str});
       });
-      // Ordena linhas de cima pra baixo (Y decrescente) e junta
-      Object.keys(grupos).map(Number).sort((a,b)=>b-a).forEach(y=>{
-        const txt=grupos[y].sort((a,b)=>a.x-b.x).map(i=>i.t).filter(t=>t).join(' ');
-        if(txt.trim())textoCompleto+=txt.trim()+'\n';
+      Object.keys(map).map(Number).sort((a,b)=>b-a).forEach(y=>{
+        const linha=map[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
+        if(linha)texto+=linha+'\n';
       });
-      textoCompleto+='---PAGINA---\n';
+      texto+='---PAGINA---\n';
     }
-    parsearExtrato(textoCompleto,result,preview);
+    parsearExtrato(texto,result,preview);
   }catch(err){
-    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro: ${err.message}</div>`;
+    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro: ${err.message}<br><small>Tente abrir o PDF no navegador primeiro e tente novamente.</small></div>`;
+    console.error(err);
   }
 }
 
