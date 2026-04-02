@@ -1939,6 +1939,9 @@ async function lerPDF(file){
     }
 
     // ── detecta banco ──
+    // DEBUG
+    const dbgLinhas=texto.split("\n").slice(0,60).map((l,i)=>`${i}: |${l}|`).join("\n");
+    document.getElementById("pdfMsg").innerHTML=`<pre style="font-size:9px;color:var(--amber);white-space:pre-wrap;max-height:400px;overflow-y:auto">${dbgLinhas}</pre>`;
     const isItau=texto.toLowerCase().includes('itaú')||texto.toLowerCase().includes('banco itau');
     const lancs=isItau?parseItau(texto):parseBradesco(texto);
 
