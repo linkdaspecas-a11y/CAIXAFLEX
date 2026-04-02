@@ -1989,87 +1989,42 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    const TIPOS_BR=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul',
-      'Pagto Cobranca','Pagto Eletron Cobranca','Saque Din Atm','Saque Dinheiro Atm',
-      'Apl.invest Fac','Resgate Inv Fac','Resg/vencto Cdb','Rent.inv.facil',
-      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix','Ted Recebido'];
-
-    const INTERNO_BR=['rent.inv','apl.invest fac','resg/vencto','resgate inv fac',
-      'resg.autom','rentab.invest','saldo invest'];
-
-    function filtInterno(d){return INTERNO_BR.some(p=>d.toLowerCase().includes(p));}
-
-    const PAT_BR=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    const PAT_DOCTO=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-
+    // Bradesco: formato com colunas Docto + Credito/Debito separadas
+    // Linha: DESC  DOCTO(7+dig)  VALOR  (crédito, sem sinal)
+    // Linha: DESC  DOCTO(7+dig)  - VALOR  (débito, com -)
     let dataAtual=null;
-    // Split por páginas usando o marcador inserido na extração
-    const paginas=texto.split('---PAGINA---');
+    const PAT=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    const PAT_D=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    const SKIP=['rent.inv','apl.invest','resg/vencto','resgate inv fac','saldo invest',
+      'resg.autom','rentab.invest','data histórico','total','bradesco','https',
+      'fone fácil','sac ','ouvidoria','os dados','últimos','nome:','extrato de',
+      '---pagina---'];
+    function skipBr(l){const lo=l.toLowerCase();return SKIP.some(p=>lo.includes(p))||/^\d+\/\d+$/.test(l)||/^\d{2}\/\d{2}\/\d{4},/.test(l);}
 
-    paginas.forEach(pagina=>{
-      const ls=pagina.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
-
-      // Coleta tipos do topo (antes de "Data Histórico")
-      const tiposPag=[];
-      let passou=false;
-      ls.forEach(l=>{
-        if(l.includes('Data Histórico')){passou=true;return;}
-        if(!passou&&TIPOS_BR.includes(l))tiposPag.push(l);
-      });
-      let ti=0;
-
-      // Processa apenas linhas após o cabeçalho
-      let emDados=false;
-      ls.forEach(linha=>{
-        if(linha.includes('Data Histórico')){emDados=true;return;}
-        if(!emDados)return;
-        if(/^https?:\/\//.test(linha))return;
-        if(/^\d{2}\/\d{2}\/\d{4},/.test(linha))return;
-        if(linha.includes('Banco Bradesco'))return;
-        if(/\s*Total\s/.test(linha))return;
-        if(TIPOS_BR.includes(linha))return;
-        if(filtInterno(linha))return;
-
-        // Extrai data
-        const mD=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
-        if(mD){
-          const d=parsarData(mD[1]);
-          if(d)dataAtual=d;
-          linha=mD[2].trim();
-        }
-        if(!dataAtual)return;
-
-        // Padrão principal: DESC DOCTO [-]VALOR
-        const m=linha.match(PAT_BR);
-        if(m){
-          let desc=(m[1]||'').trim();
-          const negativo=!!(m[3]);
-          const val=parsarValor(m[4]);
-          if(!val||val<0.05||val>10000000)return;
-
-          desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-          const tipoT=tiposPag[ti]||'';ti++;
-          if(filtInterno(desc+tipoT))return;
-          if(val<1&&!desc)return;
-
-          const descFinal=tipoT&&desc?`${tipoT} · ${desc}`:desc||tipoT||'Lançamento';
-          const tipo=negativo?'s':'e';
-          lancamentos.push({data:dataAtual,desc:descFinal,val,tipo,cat:sugerirCat(descFinal,tipo)});
-          return;
-        }
-
-        // Só docto + valor (sem desc)
-        const m2=linha.match(PAT_DOCTO);
-        if(m2){
-          const val=parsarValor(m2[3]);
-          const negativo=!!(m2[2]);
-          const tipoT=tiposPag[ti]||'';ti++;
-          if(filtInterno(tipoT))return;
-          if(val<1)return;
-          const tipo=negativo?'s':'e';
-          lancamentos.push({data:dataAtual,desc:tipoT||'Lançamento',val,tipo,cat:sugerirCat(tipoT,tipo)});
-        }
-      });
+    linhas.forEach(linha=>{
+      if(skipBr(linha))return;
+      const mD=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
+      if(mD){const d=parsarData(mD[1]);if(d)dataAtual=d;linha=mD[2].trim();}
+      if(!dataAtual)return;
+      const m=linha.match(PAT);
+      if(m){
+        let desc=(m[1]||'').trim();
+        const neg=!!(m[3]);const val=parsarValor(m[4]);
+        if(!val||val<0.05||val>10000000)return;
+        desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+        if(!desc||desc.length<2)return;
+        if(skipBr(desc))return;
+        const tipo=neg?'s':'e';
+        lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+        return;
+      }
+      const m2=linha.match(PAT_D);
+      if(m2){
+        const val=parsarValor(m2[3]);const neg=!!(m2[2]);
+        if(val<1)return;
+        const tipo=neg?'s':'e';
+        lancamentos.push({data:dataAtual,desc:'Lançamento Bradesco',val,tipo,cat:sugerirCat('',tipo)});
+      }
     });
   } else {
     // ── ITAÚ e genérico ──
