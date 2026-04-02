@@ -1991,68 +1991,67 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    // Bradesco PDF.js extrai numa linha: "DESC DOCTO [-]VALOR [SALDO]"
-    // Docto pode ter 4-10 dígitos (ex: 0000564, 6152274)
-    // Crédito = sem "-", Débito = com "- "
-    let dataAtual=null;
+    // Parser Bradesco — baseado no formato real do PDF extraído
+    // Cada linha tem: [DD/MM/AA] [DESC] DOCTO [-]VALOR [SALDO]
+    // Crédito = sem "-", Débito = com "- " antes do valor
 
-    // Padrão principal: qualquer texto + docto(4+dig) + [-]valor
-    const PAT=/^(.+?)\s+(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // Só docto + valor (sem descrição)
-    const PAT_D=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-
-    const SKIP=['rent.inv','apl.invest','resg/vencto','resgate inv fac','saldo invest',
-      'resg.autom','rentab.invest','data histórico','total ','bradesco','https',
-      'fone fácil','sac ','ouvidoria','os dados','últimos lançamentos','nome:',
-      'extrato de','---pagina---','saldo anterior','internet banking'];
+    const IGBR=['saldo anterior','data histórico','total ','bradesco s/a',
+      'saldo invest','rent.inv','apl.invest fac','resg/vencto','resgate inv fac',
+      'resg.autom','rentab.invest','internet banking','fone fácil','sac ',
+      'ouvidoria','os dados acima','últimos lançamentos','nome:','extrato de',
+      'saldos invest','---pagina---'];
 
     function skipBr(l){
-      const lo=l.toLowerCase();
-      return SKIP.some(p=>lo.includes(p))||
-        /^\d+\/\d+$/.test(l)||
-        /^\d{2}\/\d{2}\/\d{4},/.test(l)||
-        l.length<3;
+      const lo=l.toLowerCase().trim();
+      if(!lo||lo.length<3)return true;
+      if(/^https?:\/\//.test(lo))return true;
+      if(/^\d{2}\/\d{2}\/\d{4},/.test(lo))return true;
+      if(/^\d+\/\d+$/.test(lo))return true;
+      return IGBR.some(p=>lo.includes(p));
     }
 
+    function limpBr(d){
+      return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+    }
+
+    // Regex: [DATA] [DESC] DOCTO(4+) [-]VALOR [SALDO]
+    const PAT_BR=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.*?)\s*(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+
+    let dataAtual=null;
+    let emDados=false;
+
     linhas.forEach(linha=>{
+      if(linha.includes('Data Histórico')){emDados=true;return;}
+      if(!emDados)return;
       if(skipBr(linha))return;
 
-      // Detecta data DD/MM/AA no início
-      const mD=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
-      if(mD){
-        const d=parsarData(mD[1]);
-        if(d)dataAtual=d;
-        linha=mD[2].trim();
-      }
+      const m=linha.match(PAT_BR);
+      if(!m)return;
+
+      const[,dataStr,descRaw,docto,negStr,valStr]=m;
+
+      // Atualiza data se presente na linha
+      if(dataStr){const d=parsarData(dataStr);if(d)dataAtual=d;}
       if(!dataAtual)return;
 
-      // Tenta padrão principal
-      const m=linha.match(PAT);
-      if(m){
-        let desc=(m[1]||'').trim();
-        const neg=!!(m[3]);
-        const val=parsarValor(m[4]);
-        if(!val||val<0.05||val>10000000)return;
+      const val=parsarValor(valStr);
+      if(!val||val<0.10||val>10000000)return;
 
-        // Limpa prefixos e data no final
-        desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-        if(skipBr(desc))return;
-        if(!desc||desc.length<2)return;
-
-        const tipo=neg?'s':'e';
-        lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
-        return;
+      // Verifica se descRaw é uma data (linhas como "06/01/26 6152274 3.219,70")
+      let desc=limpBr(descRaw||'');
+      if(/^\d{2}\/\d{2}\/\d{2}$/.test(desc)){
+        // A "desc" era uma data nova — atualiza e ignora como desc
+        const novaData=parsarData(desc);
+        if(novaData)dataAtual=novaData;
+        desc='';
       }
 
-      // Só docto + valor
-      const m2=linha.match(PAT_D);
-      if(m2){
-        const val=parsarValor(m2[3]);
-        const neg=!!(m2[2]);
-        if(val<1)return;
-        const tipo=neg?'s':'e';
-        lancamentos.push({data:dataAtual,desc:'Lançamento',val,tipo,cat:sugerirCat('',tipo)});
-      }
+      if(skipBr(desc))return;
+      if(!desc||desc.length<2)desc='Lançamento';
+
+      const neg=!!negStr;
+      const tipo=neg?'s':'e';
+      lancamentos.push({data:dataAtual,desc,val,tipo,cat:sugerirCat(desc,tipo)});
     });
   } else {
     // ── ITAÚ e genérico ──
