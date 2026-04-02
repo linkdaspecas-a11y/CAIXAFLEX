@@ -2020,92 +2020,78 @@ function parsearExtrato(texto,result,preview){
       }
     });
   } else {
-    // ══ BRADESCO — Parser definitivo v5 ══
-    // Formato real confirmado: "DESC DOCTO- VALOR" = débito, "DESC DOCTO VALOR SALDO" = crédito
-    const INTERNOS_BR=['rent.inv','apl.invest','resg/vencto','rentab.invest',
-      'resgate inv fac','saldo invest','resg.autom','saldo anterior',
-      'resgate invest facil','resg.autom.invest'];
-    const PULAR_BR=['total ','data histórico','data   histórico','https://',
-      '02/04/2026','saldo invest','fone fácil','sac ','ouvidoria','se preferir',
-      'demais regiões','capitais e regiões','internet banking','nome:','extrato de',
-      'bradesco internet','atendimento','cancelamento','consulta de saldo',
-      'os dados acima','saldos invest'];
+    // ══ BRADESCO — simples igual Itaú ══
+    // Formato: "DESC DOCTO- VALOR" débito, "DESC DOCTO VALOR" crédito
+    // DATA no início da linha atualiza a data atual
 
-    function intBr(s){return INTERNOS_BR.some(p=>(s||'').toLowerCase().includes(p));}
-    function pulaBr(l){
+    const IGN=['total ','saldo anterior','data histórico','data   histórico',
+      'saldo invest','rent.inv','apl.invest','resg/vencto','rentab.invest',
+      'resg.autom','resgate inv fac','os dados','saldos invest','fone fácil',
+      'sac ','ouvidoria','se preferir','internet banking','nome:','extrato de',
+      'bradesco internet','---pagina---','02/04/2026'];
+
+    function ignBr(l){
       const lo=(l||'').toLowerCase();
-      if(!lo||lo.length<3)return true;
+      if(!lo||lo.length<2)return true;
       if(/^https?:\/\//.test(lo))return true;
       if(/^\d+\/\d+$/.test(lo))return true;
-      return PULAR_BR.some(p=>lo.includes(p));
+      if(/^\d{2}\/\d{2}\/\d{4},/.test(lo))return true;
+      return IGN.some(p=>lo.includes(p));
     }
-    function limBr(d){
-      return d.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-    }
-    function pV(v){return parseFloat(v.replace(/[^\d,]/g,'').replace(',','.'));}
 
-    // DÉBITO: [DATA ] DESC DOCTO- VALOR [SALDO]
-    const R_DEB=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.*?)\s*(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
-    // CRÉDITO com saldo: [DATA ] DESC DOCTO VALOR SALDO
-    const R_CRE=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
-    // CRÉDITO sem saldo: [DATA ] DESC DOCTO VALOR
-    const R_CRE2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
-    // Só data+docto+val+saldo (interno)
-    const R_SOM=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+    // Padrão: [DD/MM/AA ] DESC DOCTO- VALOR [SALDO]  → débito
+    const PAT_D=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})-\s*([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    // Padrão: [DD/MM/AA ] DESC DOCTO VALOR SALDO      → crédito (tem saldo no fim)
+    const PAT_C=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
+    // Padrão: [DD/MM/AA ] DESC DOCTO VALOR             → crédito (sem saldo)
+    const PAT_C2=/^(?:(\d{2}\/\d{2}\/\d{2})\s+)?(.+?)\s+(\d{4,})\s+([\d\.]+,\d{2})$/;
+    // Só data+docto+val+saldo sem desc → só atualiza data
+    const PAT_S=/^(\d{2}\/\d{2}\/\d{2})\s+(\d{4,})\s+([\d\.]+,\d{2})\s+([\-\d\.]+,\d{2})$/;
 
     let dt=null;
 
+    function addBr(desc,val,neg){
+      if(!dt||!desc||desc.length<2)return;
+      if(val<0.05||val>10000000)return;
+      const dlo=desc.toLowerCase();
+      if(IGN.some(p=>dlo.includes(p)))return;
+      if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc.trim()))return;
+      desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
+      if(!desc||desc.length<2)return;
+      const tipo=neg?'s':'e';
+      lancamentos.push({data:dt,desc,val,tipo,cat:sugerirCat(desc,tipo)});
+    }
+
     linhas.forEach(linha=>{
       linha=linha.trim();
-      if(pulaBr(linha))return;
-      if(linha.includes('Data')&&linha.includes('Histórico'))return;
+      if(ignBr(linha))return;
+      if(linha.includes('Data')&&(linha.includes('Histórico')||linha.includes('Historico')))return;
 
-      // Só data+docto+val+saldo → atualiza data, sem lançamento
-      let m=linha.match(R_SOM);
+      // Só data+docto+val+saldo → atualiza data sem lançamento
+      let m=linha.match(PAT_S);
       if(m){dt=parsarData(m[1]);return;}
 
-      // DÉBITO
-      m=linha.match(R_DEB);
+      // Débito: DOCTO- VALOR
+      m=linha.match(PAT_D);
       if(m){
         if(m[1])dt=parsarData(m[1]);
-        if(!dt)return;
-        const desc=limBr(m[2]||'');
-        const val=pV(m[4]);
-        if(val<0.05||val>10000000)return;
-        if(intBr(desc))return;
-        const d=desc||m[3];
-        if(!d||d.length<2)return;
-        lancamentos.push({data:dt,desc:d,val,tipo:'s',cat:sugerirCat(d,'s')});
+        addBr(m[2],parseFloat(m[4].replace(/\./g,'').replace(',','.')),true);
         return;
       }
 
-      // CRÉDITO com saldo
-      m=linha.match(R_CRE);
+      // Crédito com saldo
+      m=linha.match(PAT_C);
       if(m){
         if(m[1])dt=parsarData(m[1]);
-        if(!dt)return;
-        const desc=limBr(m[2]||'');
-        const val=pV(m[4]);
-        if(val<0.05||val>10000000)return;
-        if(intBr(desc))return;
-        if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc))return;
-        if(!desc||desc.length<2)return;
-        lancamentos.push({data:dt,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
+        addBr(m[2],parseFloat(m[4].replace(/\./g,'').replace(',','.')),false);
         return;
       }
 
-      // CRÉDITO sem saldo
-      m=linha.match(R_CRE2);
+      // Crédito sem saldo
+      m=linha.match(PAT_C2);
       if(m){
         if(m[1])dt=parsarData(m[1]);
-        if(!dt)return;
-        const desc=limBr(m[2]||'');
-        const val=pV(m[4]);
-        if(val<0.05||val>10000000)return;
-        if(intBr(desc))return;
-        if(/^\d{2}\/\d{2}\/\d{2,4}$/.test(desc))return;
-        if(!desc||desc.length<2)return;
-        lancamentos.push({data:dt,desc,val,tipo:'e',cat:sugerirCat(desc,'e')});
+        addBr(m[2],parseFloat(m[4].replace(/\./g,'').replace(',','.')),false);
       }
     });
   }
