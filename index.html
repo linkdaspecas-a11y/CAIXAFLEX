@@ -1910,7 +1910,6 @@ function renderProdutos(){
 }
 
 // ══ IMPORTAR PDF ══
-// ══ IMPORTAR PDF ══
 function handlePdfDrop(e){e.preventDefault();document.getElementById('pdfDrop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)handlePdfFile(f);}
 
 async function handlePdfFile(file){
@@ -1926,20 +1925,23 @@ async function handlePdfFile(file){
     for(let p=1;p<=pdf.numPages;p++){
       const page=await pdf.getPage(p);
       const content=await page.getTextContent();
-      const linhaMap={};
+      // Agrupa itens por linha (Y), ordena por X, junta com espaço
+      const grupos={};
       content.items.forEach(item=>{
         const y=Math.round(item.transform[5]);
-        if(!linhaMap[y])linhaMap[y]=[];
-        linhaMap[y].push({x:item.transform[4],text:item.str});
+        if(!grupos[y])grupos[y]=[];
+        grupos[y].push({x:item.transform[4],t:item.str.trim()});
       });
-      Object.keys(linhaMap).sort((a,b)=>b-a).forEach(y=>{
-        textoCompleto+=linhaMap[y].sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ')+'\n';
+      // Ordena linhas de cima pra baixo (Y decrescente) e junta
+      Object.keys(grupos).map(Number).sort((a,b)=>b-a).forEach(y=>{
+        const txt=grupos[y].sort((a,b)=>a.x-b.x).map(i=>i.t).filter(t=>t).join(' ');
+        if(txt.trim())textoCompleto+=txt.trim()+'\n';
       });
       textoCompleto+='---PAGINA---\n';
     }
     parsearExtrato(textoCompleto,result,preview);
   }catch(err){
-    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro ao ler o PDF: ${err.message}</div>`;
+    result.innerHTML=`<div class="pdf-result" style="color:var(--red)">❌ Erro: ${err.message}</div>`;
   }
 }
 
