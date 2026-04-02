@@ -1989,80 +1989,89 @@ function parsearExtrato(texto,result,preview){
   }
 
   if(banco==='bradesco'){
-    // Formato real extraído pelo PDF.js:
-    // Primeira metade da página: lista de tipos (Transfe Pix, Pagto Cobranca, etc.)
-    // Segunda metade: Data Histórico Docto Crédito Débito Saldo
-    // "02/01/26 6152274 6.780,30 6.781,30"
-    // "Rem: Segura Comercio de pe 02/01 0927480 1.286,00"
-    // "Escola do Lucas 0000564 - 1.260,83"
+    // Bradesco PDF.js format:
+    // Top of each page: list of transaction types (Transfe Pix, Pagto Cobranca...)
+    // After "Data Histórico" header: actual data rows
+    // Pattern: DESC  DOCTO(7+digits)  [-]VALOR  [SALDO]
+    // Negative values have "- " before the amount
 
+    const TIPOS_BR=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul',
+      'Pagto Cobranca','Pagto Eletron Cobranca','Saque Din Atm','Saque Dinheiro Atm',
+      'Apl.invest Fac','Resgate Inv Fac','Resg/vencto Cdb','Rent.inv.facil',
+      'Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix'];
+
+    const INTERNO_BR=['rent.inv','apl.invest fac','resg/vencto','resgate inv fac',
+      'resg.autom','rentab.invest','saldo invest'];
+
+    function filtInterno(d){return INTERNO_BR.some(p=>d.toLowerCase().includes(p));}
+
+    const PAT_BR=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+    const PAT_DOCTO=/^(\d{4,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\-\d\.,]+)?$/;
+
+    // Split text into page sections at "Data Histórico" header
+    const secoes=texto.split('Data Histórico Docto. Crédito (R$) Débito (R$) Saldo (R$)');
     let dataAtual=null;
 
-    const ignoraBradesco=['saldo anterior','saldo invest','rent.inv','apl.invest','resg/vencto','resgate inv','total ','data histórico','crédito (r$)','débito (r$)','saldo (r$)','bradesco internet','fone fácil','sac -','ouvidoria','os dados acima','últimos lançamentos','ag:','conta:','entre ','02/04/2026','nome:','extrato de'];
-    function deveIgnorarBradesco(l){
-      const lo=l.toLowerCase();
-      return ignoraBradesco.some(p=>lo.includes(p))||/^https?:\/\//.test(l)||/^\d+\/\d+$/.test(l);
-    }
+    secoes.forEach((secao,idx)=>{
+      if(idx===0)return;
+      const ls=secao.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
 
-    // Tipos de transação do Bradesco — ficam no topo da página antes dos dados
-    const tiposBradesco=['Transfe Pix','Transf Autoriz','Transf Contas','Ted Dif.titul','Pagto Cobranca','Pagto Eletron','Saque Din Atm','Apl.invest Fac','Resgate Inv Fac','Resg/vencto Cdb','Rent.inv.facil','Pix Qrcode Din','Pix Qrcode Est','Transferencia Pix','Resg.autom','Rentab.invest'];
+      // Get types list from PREVIOUS section (they appear at top before header)
+      const tiposSec=[];
+      const anterior=secoes[idx-1].split('\n').map(l=>l.trim());
+      anterior.forEach(l=>{if(TIPOS_BR.includes(l))tiposSec.push(l);});
+      let ti=0;
 
-    // Coleta a lista de tipos em ordem (aparecem no topo de cada página)
-    const filaTipos=[];
-    linhas.forEach(l=>{
-      if(tiposBradesco.some(t=>l.trim()===t||l.trim().startsWith(t)))filaTipos.push(l.trim());
-    });
-    let idxTipo=0;
+      ls.forEach(linha=>{
+        // Skip junk lines
+        if(/^https?:\/\//.test(linha))return;
+        if(/^\d{2}\/\d{2}\/\d{4},/.test(linha))return;
+        if(linha.includes('Banco Bradesco'))return;
+        if(/ Total /.test(linha))return;
+        if(TIPOS_BR.includes(linha))return;
+        if(filtInterno(linha))return;
 
-    const patLinha=/^(.*?)\s+(\d{7,})\s+([-]\s*)?([\d\.]+,\d{2})(?:\s+[\d\.,]+)?$/;
-    const patComData=/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/;
+        // Extract date from start
+        const mD=linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(.*)/);
+        if(mD){
+          const d=parsarData(mD[1]);
+          if(d)dataAtual=d;
+          linha=mD[2].trim();
+        }
+        if(!dataAtual)return;
 
-    linhas.forEach(linha=>{
-      if(deveIgnorarBradesco(linha))return;
-      // Pula linhas que são só tipos (já coletados)
-      if(tiposBradesco.some(t=>linha.trim()===t))return;
+        // Try main pattern: DESC DOCTO [-]VALOR
+        const m=linha.match(PAT_BR);
+        if(m){
+          let desc=(m[1]||'').trim();
+          const negativo=!!(m[3]);
+          const val=parsarValor(m[4]);
+          if(!val||val<0.05||val>10000000)return;
 
-      const mData=patComData.match?null:linha.match(patComData);
-      const mDataR=linha.match(patComData);
-      if(mDataR){
-        const d=parsarData(mDataR[1]);
-        if(d)dataAtual=d;
-        linha=mDataR[2].trim();
-      }
-      if(!dataAtual)return;
+          desc=desc.replace(/^(Rem:|Des:)\s*/i,'').replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
 
-      const m=linha.match(patLinha);
-      if(!m)return;
+          const tipoT=tiposSec[ti]||'';ti++;
+          if(filtInterno(desc+tipoT))return;
+          if(val<1&&!desc)return;
 
-      let desc=(m[1]||'').trim();
-      const temMenos=!!(m[3]);
-      const val=parsarValor(m[4]);
-      if(!val||val<0.1||val>10000000)return;
+          const descFinal=tipoT&&desc?`${tipoT} · ${desc}`:desc||tipoT||'Lançamento';
+          const tipo=negativo?'s':'e';
+          lancamentos.push({data:dataAtual,desc:descFinal,val,tipo,cat:sugerirCat(descFinal,tipo)});
+          return;
+        }
 
-      // Limpa prefixos Rem:/Des: mas guarda o conteúdo
-      const prefixo=desc.match(/^(Rem:|Des:)\s*/i);
-      if(prefixo)desc=desc.replace(prefixo[0],'').trim();
-      // Remove data no final (ex: "05/01")
-      desc=desc.replace(/\s+\d{2}\/\d{2}\s*$/,'').trim();
-
-      // Pega o tipo correspondente da fila
-      const tipo_transacao=filaTipos[idxTipo]||'';
-      idxTipo++;
-
-      // Monta descrição final: "Pagto Cobranca · Escola do Lucas"
-      let descFinal='';
-      if(tipo_transacao&&desc&&!desc.startsWith(tipo_transacao)){
-        descFinal=`${tipo_transacao} · ${desc}`;
-      } else {
-        descFinal=desc||tipo_transacao||'Lançamento Bradesco';
-      }
-
-      // Filtra internos
-      const dLow=descFinal.toLowerCase();
-      if(dLow.includes('rent.inv')||dLow.includes('apl.invest fac')||dLow.includes('resg/vencto')||dLow.includes('resgate inv fac')||dLow.includes('saldo invest'))return;
-
-      const tipo=temMenos?'s':'e';
-      lancamentos.push({data:dataAtual,desc:descFinal,val,tipo,cat:sugerirCat(descFinal,tipo)});
+        // Only docto + value (no desc)
+        const m2=linha.match(PAT_DOCTO);
+        if(m2){
+          const val=parsarValor(m2[3]);
+          const negativo=!!(m2[2]);
+          const tipoT=tiposSec[ti]||'';ti++;
+          if(filtInterno(tipoT))return;
+          if(val<1)return;
+          const tipo=negativo?'s':'e';
+          lancamentos.push({data:dataAtual,desc:tipoT||'Lançamento',val,tipo,cat:sugerirCat(tipoT,tipo)});
+        }
+      });
     });
   } else {
     // ── ITAÚ e genérico ──
